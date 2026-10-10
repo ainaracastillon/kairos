@@ -173,8 +173,14 @@ async function openSqlite(file) {
 
 async function openPostgres(url) {
   const { Pool } = require('pg');
-  const ssl = /localhost|127\.0\.0\.1/.test(url) || process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false };
-  const pool = new Pool({ connectionString: url, ssl, max: 5 });
+  // Las opciones de SSL de la dirección (sslmode, channel_binding…) se gestionan aquí para que
+  // funcione igual con Neon, Supabase o el Postgres interno de Render.
+  const parsed = new URL(url);
+  for (const k of ['sslmode', 'channel_binding', 'sslrootcert', 'sslcert', 'sslkey']) parsed.searchParams.delete(k);
+  const host = parsed.hostname;
+  const local = /^(localhost|127\.0\.0\.1)$/.test(host) || !host.includes('.'); // sin punto = red interna de Render
+  const ssl = local || process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false };
+  const pool = new Pool({ connectionString: parsed.toString(), ssl, max: 5 });
   const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`); };
   const norm = (p) => p.map((v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v === undefined ? null : v));
   const wrap = (c) => ({
