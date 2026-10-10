@@ -62,14 +62,14 @@ const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;
 function mailHtml(title, bodyHtml, appUrl) {
   return `<!doctype html><html lang="es"><body style="margin:0;background:#f6f4ef;font-family:Helvetica,Arial,sans-serif;color:#1f2b30">
   <div style="max-width:560px;margin:0 auto;padding:28px 18px">
-    <div style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:#2c5f6f;margin-bottom:18px">
-      <span style="display:inline-block;width:26px;height:26px;border-radius:7px;background:#14213d;color:#fca311;text-align:center;line-height:26px;font-size:16px;font-family:Helvetica,Arial,sans-serif;vertical-align:-4px">K</span> Kairos
+    <div style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:#14213d;margin-bottom:18px">
+      ${appUrl ? `<img src="${escHtml(appUrl.replace(/\/$/, ''))}/icons/icon-192.png" width="30" height="30" alt="" style="display:inline-block;width:30px;height:30px;border:0;border-radius:8px;vertical-align:-8px;margin-right:6px">` : ''}Kairos
     </div>
     <div style="background:#fff;border:1px solid #e4dfd4;border-radius:12px;padding:22px">
       <h1 style="font-family:Georgia,serif;font-size:21px;margin:0 0 12px">${escHtml(title)}</h1>
       ${bodyHtml}
     </div>
-    ${appUrl ? `<p style="text-align:center;margin:18px 0 0"><a href="${escHtml(appUrl)}" style="display:inline-block;background:#2c5f6f;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600">Abrir Kairos</a></p>` : ''}
+    ${appUrl ? `<p style="text-align:center;margin:18px 0 0"><a href="${escHtml(appUrl)}" style="display:inline-block;background:#14213d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600">Abrir Kairos</a></p>` : ''}
     <p style="color:#6c7478;font-size:12px;text-align:center;margin-top:18px">Recibes este correo porque tienes activados los avisos en Kairos. Puedes cambiarlo en Ajustes.</p>
   </div></body></html>`;
 }
