@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: kairos
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kairos-db
+          property: connectionString
+      # Opcional: avisos por correo (elige uno)
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+databases:
+  - name: kairos-db
+    plan: free

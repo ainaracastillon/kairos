@@ -1,0 +1,19 @@
+{
+  "name": "kairos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kairos: tu horario escolar, tus tareas y tus exámenes en un solo sitio, con recordatorios por correo y notificaciones.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "dependencies": {
+    "@fontsource-variable/figtree": "^5.1.0",
+    "@fontsource-variable/fraunces": "^5.1.0",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1",
+    "web-push": "^3.6.7"
+  }
+}
