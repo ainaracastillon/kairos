@@ -1,6 +1,6 @@
 'use strict';
 /*
- * Envío de avisos: correo (Resend por HTTP o SMTP con nodemailer) y notificaciones push (web-push).
+ * Envío de avisos: correo (Brevo o Resend por HTTP, o SMTP con nodemailer) y notificaciones push (web-push).
  * Si no hay nada configurado, el correo se muestra en la consola del servidor.
  */
 
@@ -12,7 +12,7 @@ function optional(name) {
 const nodemailer = optional('nodemailer');
 const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_FROM || 'Kairos <avisos@kairos.app>';
 let transport = null;
-if (!process.env.RESEND_API_KEY && process.env.SMTP_HOST && nodemailer) {
+if (!process.env.BREVO_API_KEY && !process.env.RESEND_API_KEY && process.env.SMTP_HOST && nodemailer) {
   const port = Number(process.env.SMTP_PORT || 587);
   transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -21,9 +21,25 @@ if (!process.env.RESEND_API_KEY && process.env.SMTP_HOST && nodemailer) {
     auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
   });
 }
-const mailConfigured = () => Boolean(process.env.RESEND_API_KEY || transport);
+const mailConfigured = () => Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY || transport);
+
+/** «Kairos <hola@x.com>» → { name: 'Kairos', email: 'hola@x.com' } */
+function parseFrom(from) {
+  const m = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  return m ? { name: m[1] || 'Kairos', email: m[2] } : { name: 'Kairos', email: from.trim() };
+}
 
 async function sendMail({ to, subject, text, html }) {
+  // Brevo: gratis hasta 300 correos al día y permite usar como remitente un correo verificado (p. ej. un Gmail).
+  if (process.env.BREVO_API_KEY) {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ sender: parseFrom(MAIL_FROM), to: [{ email: to }], subject, textContent: text, htmlContent: html }),
+    });
+    if (!res.ok) throw new Error(`No se pudo enviar el correo (${res.status}): ${await res.text().catch(() => '')}`);
+    return;
+  }
   if (process.env.RESEND_API_KEY) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
