@@ -45,6 +45,7 @@ Abre http://localhost:3000. Sin configurar nada, los datos se guardan en `data/k
 ## Estructura
 
 - `public/`: la app (HTML, CSS, JavaScript, service worker, iconos).
+- `public/fonts/`: las tipografías Figtree y Fraunces, incluidas en el código bajo la licencia SIL Open Font License 1.1 (ver los archivos `OFL-*.txt`).
 - `server/server.js`: API y servidor de archivos.
 - `server/db.js`: base de datos (SQLite o Postgres).
 - `server/reminders.js`: avisos y resumen diario.

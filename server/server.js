@@ -769,15 +769,11 @@ async function main() {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
   };
-  // Las fuentes salen de los paquetes de @fontsource si están instalados, o de public/fonts.
-  function fontPath(name) {
-    const family = name.split('-')[0];
-    const candidates = [
-      path.join(__dirname, '..', 'node_modules', '@fontsource-variable', family, 'files', name),
-      path.join(PUBLIC, 'fonts', name),
-    ];
-    return candidates.find((p) => fs.existsSync(p));
-  }
+  // Las tipografías (Figtree y Fraunces, licencia SIL OFL 1.1) van incluidas en public/fonts.
+  const fontPath = (name) => {
+    const p = path.join(PUBLIC, 'fonts', name);
+    return fs.existsSync(p) ? p : null;
+  };
   function serveStatic(req, res, pathname) {
     let file;
     if (pathname.startsWith('/fonts/')) file = fontPath(path.basename(pathname));
