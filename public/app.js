@@ -50,6 +50,8 @@ const ICONS = {
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.4 3.2M6.6 6.6C4 8.3 2.5 12 2.5 12S6 18.5 12 18.5c1.9 0 3.5-.6 4.9-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17"/>',
   doc: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5M10 12.5h6M10 16.5h6"/>',
   palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.3-1.1-1.6-1.1-2.7 0-.9.7-1.6 1.7-1.6h2.1a4 4 0 0 0 4-4C20.5 6.6 16.7 3.5 12 3.5Z"/><circle cx="7.8" cy="11.2" r="1.1"/><circle cx="10" cy="7.6" r="1.1"/><circle cx="14.6" cy="7.6" r="1.1"/>',
 };
@@ -279,22 +281,40 @@ const TERMS_LINKS = 'los <a href="/legal.html#terminos" target="_blank" rel="noo
  * - welcome: empezar sin cuenta o iniciar sesión.
  * - login / register: con cuenta.
  * - upgrade: crear cuenta a partir de lo que ya tienes sin cuenta (se conserva todo).
+ * - forgot: pedir el enlace para restablecer la contraseña.
+ * - reset: elegir una contraseña nueva con el enlace recibido por correo (opts.token).
  */
-function renderAuth(mode = 'welcome') {
+function renderAuth(mode = 'welcome', opts = {}) {
   const guest = Boolean(state.user?.is_guest);
   if (mode === 'register' && guest) mode = 'upgrade';
   const isLogin = mode === 'login';
   const isWelcome = mode === 'welcome';
   const isUpgrade = mode === 'upgrade';
-  const back = guest ? '<a class="auth-back" data-back>← Volver a mi horario</a>' : isWelcome ? '' : '<a class="auth-back" data-mode="welcome">← Volver</a>';
+  const isForgot = mode === 'forgot';
+  const isReset = mode === 'reset';
+  const back = isForgot ? '<a class="auth-back" data-mode="login">← Volver</a>'
+    : (guest && !isReset) || (isReset && state.user) ? '<a class="auth-back" data-back>← Volver a mi horario</a>'
+    : isWelcome ? '' : '<a class="auth-back" data-mode="welcome">← Volver</a>';
   const titles = {
     welcome: ['Organiza tu curso', 'Tu horario, tus tareas y tus exámenes en un solo sitio. Sin registrarte.'],
     login: ['Hola de nuevo', 'Entra para ver tu horario en este dispositivo.'],
     register: ['Crea tu cuenta', 'Así podrás ver tu horario en cualquier dispositivo.'],
     upgrade: ['Crea tu cuenta', 'Se guardará todo lo que ya tienes y podrás verlo en cualquier dispositivo.'],
+    forgot: ['¿Has olvidado tu contraseña?', 'Escribe el correo de tu cuenta y te enviaremos un enlace para elegir una nueva.'],
+    reset: ['Elige una contraseña nueva', 'Comprobando el enlace…'],
   };
   const [title, sub] = titles[mode];
-  const form = isWelcome ? `
+  const form = isForgot ? `
+      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required value="${esc(opts.email || '')}"></label>
+      <div class="error" id="auth-error"></div>
+      <button class="btn btn-primary" type="submit">Enviar enlace</button>
+      <div class="switch">¿Te has acordado? <a data-mode="login">Inicia sesión</a></div>`
+  : isReset ? `
+      <label class="field"><span>Nueva contraseña</span><input type="password" name="password" autocomplete="new-password" required minlength="8"><small class="hint">Mínimo 8 caracteres.</small></label>
+      <label class="field"><span>Repite la contraseña</span><input type="password" name="password2" autocomplete="new-password" required minlength="8"></label>
+      <div class="error" id="auth-error"></div>
+      <button class="btn btn-primary" type="submit" disabled>Guardar contraseña</button>`
+  : isWelcome ? `
       <button class="btn btn-primary" type="button" id="start-guest">Empezar sin cuenta</button>
       <p class="hint auth-note">Se guarda en este dispositivo. Cuando quieras, crea una cuenta para verlo también en otros.</p>
       <div class="auth-divider"><span>¿Ya tienes cuenta?</span></div>
@@ -304,7 +324,7 @@ function renderAuth(mode = 'welcome') {
       ${isLogin ? '' : '<label class="field"><span>Nombre</span><input type="text" name="name" autocomplete="name" required></label>'}
       <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required></label>
       <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required minlength="8">
-        ${isLogin ? '' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
+        ${isLogin ? '<a class="forgot-link" data-mode="forgot">¿Has olvidado tu contraseña?</a>' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
       ${isLogin ? '' : `<label class="check-line legal-accept"><input type="checkbox" name="accept_terms" required><span>He leído y acepto ${TERMS_LINKS}.</span></label>`}
       <div class="error" id="auth-error"></div>
       <button class="btn btn-primary" type="submit">${isLogin ? 'Entrar' : 'Crear cuenta'}</button>
@@ -335,7 +355,11 @@ function renderAuth(mode = 'welcome') {
   const root = $('#auth-form');
   root.addEventListener('click', (e) => {
     const m = e.target.closest('[data-mode]');
-    if (m) { e.preventDefault(); return renderAuth(m.dataset.mode); }
+    if (m) {
+      e.preventDefault();
+      const email = root.email?.value.trim();
+      return renderAuth(m.dataset.mode, email ? { email } : {});
+    }
     if (e.target.closest('[data-back]')) { e.preventDefault(); start().catch(() => renderAuth('welcome')); }
   });
   if (isWelcome) {
@@ -352,7 +376,55 @@ function renderAuth(mode = 'welcome') {
     };
     return;
   }
+  if (opts.email && root.email && !root.email.value) root.email.value = opts.email;
   if (!window.matchMedia('(pointer: coarse)').matches) $('#auth-form input')?.focus();
+  if (isForgot) {
+    root.onsubmit = async (e) => {
+      e.preventDefault();
+      const email = root.email.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $('#auth-error').textContent = 'Escribe un correo válido.'; return; }
+      const btn = $('button[type=submit]', root);
+      btn.disabled = true;
+      try {
+        await api('POST', '/auth/forgot', { email });
+        $('.sub', root).remove();
+        root.querySelector('.field').outerHTML = `<div class="status ok">${icon('sent')}<span>Si hay una cuenta con <b>${esc(email)}</b>, te acabamos de enviar un enlace para elegir una contraseña nueva. Caduca en 60 minutos. Si no lo ves, mira en la carpeta de spam.</span></div>`;
+        btn.outerHTML = '<button class="btn btn-primary" type="button" data-mode="login">Volver a iniciar sesión</button>';
+        $('.switch', root).remove();
+      } catch (err) {
+        $('#auth-error').textContent = err.message;
+        btn.disabled = false;
+      }
+    };
+    return;
+  }
+  if (isReset) {
+    const sub = $('.sub', root);
+    const btn = $('button[type=submit]', root);
+    api('POST', '/auth/reset/check', { token: opts.token })
+      .then((r) => { sub.innerHTML = `Para la cuenta <b>${esc(r.email)}</b>. Al guardarla se cerrará la sesión en tus otros dispositivos.`; btn.disabled = false; })
+      .catch((err) => {
+        sub.textContent = err.message;
+        $$('.field', root).forEach((f) => f.remove());
+        btn.outerHTML = '<button class="btn btn-primary" type="button" data-mode="forgot">Pedir un enlace nuevo</button>';
+      });
+    root.onsubmit = async (e) => {
+      e.preventDefault();
+      const err = $('#auth-error');
+      if (root.password.value.length < 8) { err.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+      if (root.password.value !== root.password2.value) { err.textContent = 'Las dos contraseñas no coinciden.'; return; }
+      btn.disabled = true;
+      try {
+        await api('POST', '/auth/reset', { token: opts.token, password: root.password.value });
+        await start();
+        toast('Contraseña cambiada. Ya has entrado en tu cuenta.');
+      } catch (ex) {
+        err.textContent = ex.message;
+        btn.disabled = false;
+      }
+    };
+    return;
+  }
   root.onsubmit = async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
@@ -464,7 +536,11 @@ function renderView() {
   if (newScroll && el.dataset.lastView === view) newScroll.scrollTop = scrollTop;
   el.dataset.lastView = view;
 }
-window.addEventListener('hashchange', renderView);
+window.addEventListener('hashchange', () => {
+  const token = (location.hash.match(/^#restablecer=([\w-]+)/) || [])[1];
+  if (token) { history.replaceState(null, '', location.pathname); closeModal(); renderAuth('reset', { token }); return; }
+  if (state.user && $('.topbar')) renderView();
+});
 
 /** Eventos comunes (delegados) para listas de tareas en vistas y modales. */
 function bindViewEvents(root) {
@@ -1740,13 +1816,19 @@ function bindSettings(root) {
    ============================================================ */
 const LEGAL_LIST_CARD = () => `
     <section class="card">
-      <h2>Ayuda y textos legales</h2>
+      <h2>Ayuda</h2>
+      <p class="hint">¿Una duda, algo que no funciona o una idea? Escríbenos y te responderemos a tu correo.</p>
+      <ul class="legal-list">
+        <li><a href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a></li>
+      </ul>
+    </section>
+    <section class="card">
+      <h2>Textos legales</h2>
       <ul class="legal-list">
         <li><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">${icon('doc')}Aviso legal</a></li>
         <li><a href="/legal.html#privacidad" target="_blank" rel="noopener">${icon('shield')}Política de privacidad</a></li>
         <li><a href="/legal.html#terminos" target="_blank" rel="noopener">${icon('doc')}Términos de uso</a></li>
         <li><a href="/legal.html#cookies" target="_blank" rel="noopener">${icon('doc')}Política de cookies</a></li>
-        <li><a href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a></li>
       </ul>
     </section>`;
 
@@ -2778,11 +2860,43 @@ if ('serviceWorker' in navigator) {
 // Cuando terminan de cargar las fuentes, se reajustan los nombres del horario.
 document.fonts?.ready.then(() => { if (state.view === 'week') fitTimetable(); });
 
+/* Ojo para ver u ocultar cualquier contraseña de la app. */
+function addPasswordEyes(scope = document) {
+  scope.querySelectorAll?.('input[type=password]:not([data-pw])').forEach((input) => {
+    input.dataset.pw = '1';
+    const wrap = document.createElement('span');
+    wrap.className = 'pw-wrap';
+    input.replaceWith(wrap);
+    wrap.append(input);
+    wrap.insertAdjacentHTML('beforeend', `<button type="button" class="pw-eye" aria-label="Mostrar contraseña" title="Mostrar contraseña">${icon('eye')}</button>`);
+  });
+}
+new MutationObserver(() => addPasswordEyes()).observe(document.body, { childList: true, subtree: true });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.pw-eye');
+  if (!b) return;
+  e.preventDefault();
+  const input = b.parentElement.querySelector('input');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  const label = show ? 'Ocultar contraseña' : 'Mostrar contraseña';
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.innerHTML = icon(show ? 'eyeOff' : 'eye');
+});
+
 (async () => {
-  try {
-    await start();
-  } catch {
-    renderAuth('welcome');
+  const resetToken = (location.hash.match(/^#restablecer=([\w-]+)/) || [])[1];
+  if (resetToken) {
+    history.replaceState(null, '', location.pathname);
+    try { await loadAll(); } catch { /* sin sesión */ }
+    renderAuth('reset', { token: resetToken });
+  } else {
+    try {
+      await start();
+    } catch {
+      renderAuth('welcome');
+    }
   }
   // Actualiza la vista (hora actual, vencidas…) cada minuto.
   setInterval(() => { if (state.user && !$('#modal-root').innerHTML && state.view !== 'settings' && state.view !== 'admin') renderView(); }, 60000);

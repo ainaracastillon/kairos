@@ -785,3 +785,14 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .guest-perks .i { width: 18px; height: 18px; color: var(--success); flex: none; margin-top: 2px; }
 .guest-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 520px) { .guest-actions .btn { flex: 1 1 100%; justify-content: center; } }
+
+/* ---------- Contraseñas: ojo para verla y recuperar ---------- */
+.pw-wrap { position: relative; display: block; width: 100%; }
+.pw-wrap input { width: 100%; padding-right: 44px !important; }
+.pw-eye { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 36px; height: 36px; border: none; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.pw-eye:hover { color: var(--text); background: var(--surface-2); }
+.pw-eye .i { width: 19px; height: 19px; }
+.auth .forgot-link { align-self: flex-end; margin-top: 4px; font-size: 13.5px; font-weight: 600; color: var(--accent); cursor: pointer; text-decoration: none; }
+.auth .forgot-link:hover { text-decoration: underline; }
+.status.ok { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--text); }
+.status.ok .i { color: var(--success); }

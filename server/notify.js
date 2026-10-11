@@ -59,7 +59,7 @@ async function sendMail({ to, subject, text, html, replyTo }) {
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 /** Plantilla sencilla con la marca de Kairos. */
-function mailHtml(title, bodyHtml, appUrl) {
+function mailHtml(title, bodyHtml, appUrl, { button = true, footer = 'Recibes este correo porque tienes activados los avisos en Kairos. Puedes cambiarlo en Ajustes.' } = {}) {
   return `<!doctype html><html lang="es"><body style="margin:0;background:#f6f4ef;font-family:Helvetica,Arial,sans-serif;color:#1f2b30">
   <div style="max-width:560px;margin:0 auto;padding:28px 18px">
     <div style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:#14213d;margin-bottom:18px">
@@ -69,8 +69,8 @@ function mailHtml(title, bodyHtml, appUrl) {
       <h1 style="font-family:Georgia,serif;font-size:21px;margin:0 0 12px">${escHtml(title)}</h1>
       ${bodyHtml}
     </div>
-    ${appUrl ? `<p style="text-align:center;margin:18px 0 0"><a href="${escHtml(appUrl)}" style="display:inline-block;background:#14213d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600">Abrir Kairos</a></p>` : ''}
-    <p style="color:#6c7478;font-size:12px;text-align:center;margin-top:18px">Recibes este correo porque tienes activados los avisos en Kairos. Puedes cambiarlo en Ajustes.${appUrl ? ` · <a href="${escHtml(appUrl.replace(/\/$/, ''))}/legal.html#privacidad" style="color:#6c7478">Privacidad</a>` : ''}</p>
+    ${appUrl && button ? `<p style="text-align:center;margin:18px 0 0"><a href="${escHtml(appUrl)}" style="display:inline-block;background:#14213d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600">Abrir Kairos</a></p>` : ''}
+    <p style="color:#6c7478;font-size:12px;text-align:center;margin-top:18px">${escHtml(footer)}${appUrl ? ` · <a href="${escHtml(appUrl.replace(/\/$/, ''))}/legal.html#privacidad" style="color:#6c7478">Privacidad</a>` : ''}</p>
   </div></body></html>`;
 }
 

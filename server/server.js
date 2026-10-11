@@ -350,6 +350,66 @@ async function main() {
     return { user: await userOut(u.id) };
   }, { auth: false });
 
+  /* ---------- Recuperar la contraseña ---------- */
+  const RESET_MINUTES = 60;
+  const resetHits = new Map();
+  route('POST', '/auth/forgot', async ({ body, req }) => {
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const email = str(body.email, 200).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Escribe un correo válido');
+    const now = Date.now();
+    for (const key of [`ip:${ip}`, `em:${email}`]) {
+      const hits = (resetHits.get(key) || []).filter((t) => now - t < 60 * 60000);
+      if (hits.length >= (key.startsWith('ip') ? 10 : 3)) throw new HttpError(429, 'Has pedido demasiados correos. Espera un rato y vuelve a intentarlo.');
+      hits.push(now);
+      resetHits.set(key, hits);
+    }
+    const u = await db.get('SELECT * FROM users WHERE email = ? AND is_guest = 0', [email]);
+    // Siempre se responde igual, exista o no la cuenta, para no revelar qué correos están registrados.
+    if (u && !u.suspended_at) {
+      const token = crypto.randomBytes(32).toString('base64url');
+      await db.run('DELETE FROM password_resets WHERE user_id = ? OR expires_at < ?', [u.id, nowIso()]);
+      await db.run('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
+        [sha256(token), u.id, new Date(now + RESET_MINUTES * 60000).toISOString(), nowIso()]);
+      const link = `${appUrl(req).replace(/\/$/, '')}/#restablecer=${token}`;
+      const esc = notify.escHtml;
+      notify.sendMail({
+        to: u.email,
+        subject: 'Restablece tu contraseña de Kairos',
+        text: `Hola, ${u.name}.\n\nHemos recibido una petición para cambiar la contraseña de tu cuenta de Kairos. Abre este enlace para elegir una nueva (caduca en ${RESET_MINUTES} minutos):\n\n${link}\n\nSi no lo has pedido tú, ignora este correo: tu contraseña no cambiará.`,
+        html: notify.mailHtml('Restablece tu contraseña', `<p>Hola, ${esc(u.name)}.</p>
+          <p>Hemos recibido una petición para cambiar la contraseña de tu cuenta de Kairos. Pulsa el botón para elegir una nueva. El enlace caduca en ${RESET_MINUTES} minutos.</p>
+          <p style="text-align:center;margin:20px 0"><a href="${esc(link)}" style="display:inline-block;background:#2c5f6f;color:#fff;text-decoration:none;padding:11px 20px;border-radius:9px;font-weight:600">Elegir nueva contraseña</a></p>
+          <p style="color:#6c7478;font-size:13px">Si no lo has pedido tú, ignora este correo: tu contraseña no cambiará.</p>`, appUrl(req), { button: false, footer: 'Recibes este correo porque se ha pedido restablecer la contraseña de tu cuenta de Kairos.' }),
+      }).catch((e) => console.error('[correo] recuperar contraseña:', e.message));
+    }
+    return { ok: true };
+  }, { auth: false });
+
+  async function resetRow(token) {
+    const row = token ? await db.get('SELECT * FROM password_resets WHERE token_hash = ?', [sha256(String(token))]) : null;
+    if (!row || row.expires_at < nowIso()) throw bad('El enlace no es válido o ha caducado. Pide uno nuevo desde «¿Has olvidado tu contraseña?».');
+    const u = await getUser(row.user_id);
+    if (!u || u.suspended_at) throw bad('El enlace no es válido o ha caducado.');
+    return u;
+  }
+  route('POST', '/auth/reset/check', async ({ body }) => {
+    const u = await resetRow(body.token);
+    return { email: u.email };
+  }, { auth: false });
+  route('POST', '/auth/reset', async ({ body, req, res }) => {
+    rateLimit(req);
+    const u = await resetRow(body.token);
+    if (String(body.password || '').length < 8) throw bad('La contraseña debe tener al menos 8 caracteres');
+    const prev = await currentUser(req);
+    if (prev?.is_guest) await deleteUserData(prev.id);
+    await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [hashPassword(String(body.password)), u.id]);
+    await db.run('DELETE FROM password_resets WHERE user_id = ?', [u.id]);
+    await db.run('DELETE FROM sessions WHERE user_id = ?', [u.id]); // se cierran las sesiones abiertas en otros dispositivos
+    await startSession(res, u.id);
+    return { user: await userOut(u.id) };
+  }, { auth: false });
+
   route('POST', '/auth/logout', async ({ req, res }) => {
     const token = parseCookies(req)[COOKIE];
     if (token) await db.run('DELETE FROM sessions WHERE token_hash = ?', [sha256(token)]);
@@ -413,7 +473,7 @@ async function main() {
   async function deleteUserData(uid) {
     await db.tx(async (q) => {
       await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
-      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions']) {
+      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions', 'password_resets']) {
         await q.run(`DELETE FROM ${t} WHERE user_id = ?`, [uid]);
       }
       await q.run('UPDATE contact_messages SET user_id = NULL WHERE user_id = ?', [uid]);
@@ -1106,7 +1166,7 @@ async function main() {
   /* ---------- archivos estáticos ---------- */
   const TYPES = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-    '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
+    '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
   };
   // Las tipografías (Figtree y Fraunces, licencia SIL OFL 1.1) van incluidas en public/fonts.
   const fontPath = (name) => {
