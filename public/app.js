@@ -1926,6 +1926,21 @@ function closeModal() {
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#modal-root').innerHTML) closeModal(); });
 
+/**
+ * Junta las clases seguidas de la misma asignatura (o subasignatura) y en la misma aula en un solo bloque,
+ * p. ej. 10:00–11:30 y 11:30–13:00 → 10:00–13:00. Si hay un hueco o un descanso entre medias, quedan separadas.
+ */
+function mergeDayClasses(classes) {
+  const out = [];
+  for (const { slot, subject, entry } of classes) {
+    const room = entry.room_override || effRoom(subject);
+    const last = out[out.length - 1];
+    if (last && last.subject.id === subject.id && last.room === room && last.end === slot.start_time) last.end = slot.end_time;
+    else out.push({ start: slot.start_time, end: slot.end_time, subject, room });
+  }
+  return out;
+}
+
 /** Detalle de un día: clases + tareas/exámenes. */
 function dayDetail(key, inModal) {
     const date = parseKey(key);
@@ -1936,10 +1951,10 @@ function dayDetail(key, inModal) {
     return `
       <div class="modal-head"><h2>${esc(cap(fmtLongDate(date)))}</h2>${inModal ? `<button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button>` : ''}</div>
       <div class="group-title" style="margin-top:0">Clases</div>
-      ${classes.length ? `<div class="day-classes">${classes.map(({ slot, subject, entry }) => `
+      ${classes.length ? `<div class="day-classes">${mergeDayClasses(classes).map(({ start, end, subject, room }) => `
         <div class="day-class" style="--c:${subject.color}">
-          <span class="time">${slot.start_time} – ${slot.end_time}</span>
-          <div><b>${esc(subjectLabel(subject))}</b><div class="info">${entry.room_override || effRoom(subject) ? `<span>${icon('pin')}${esc(entry.room_override || effRoom(subject))}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
+          <span class="time">${start} – ${end}</span>
+          <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
         </div>`).join('')}</div>` : `<p class="hint">${!ttCovers(dayTT, date) ? `«${esc(dayTT.name)}» no tiene clases en esta fecha.` : ttDays(dayTT).includes(date.getDay()) ? 'No hay clases este día.' : `Este día no está en «${esc(dayTT.name)}».`}</p>`}
       ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       <div class="group-title">Tareas y exámenes</div>
