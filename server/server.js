@@ -668,6 +668,7 @@ async function main() {
   /** Derecho de acceso y portabilidad: todos los datos de la cuenta en un archivo JSON. */
   route('GET', '/me/export', async ({ uid }) => {
     const u = await getUser(uid);
+    if (u.is_guest) throw bad('Para descargar tus datos necesitas crear una cuenta.');
     return {
       exported_at: nowIso(),
       app: 'Kairos',

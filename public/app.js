@@ -1765,17 +1765,13 @@ function guestAccountView() {
         <li>${icon('check')}Tu horario en todos tus dispositivos</li>
         <li>${icon('check')}Avisos de tareas y exámenes por correo</li>
         <li>${icon('check')}No pierdes tus datos si borras el navegador o cambias de móvil</li>
+        <li>${icon('check')}Descargar una copia de todos tus datos</li>
       </ul>
       <div class="guest-actions">
         <button class="btn btn-primary" data-auth-link="upgrade">${icon('user')}Crear cuenta</button>
         <button class="btn" data-auth-link="login">Ya tengo cuenta: iniciar sesión</button>
       </div>
       <p class="hint" style="margin:10px 0 0">Si inicias sesión con una cuenta que ya tienes, se abrirán los datos de esa cuenta y los de este dispositivo se borrarán.</p>
-    </section>
-    <section class="card">
-      <h2>Tus datos</h2>
-      <p class="hint">Descarga una copia de todo lo que Kairos guarda en este dispositivo: horarios, asignaturas, tareas, exámenes y eventos.</p>
-      <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
     </section>
     ${LEGAL_LIST_CARD()}
     <section class="card danger-zone">
@@ -1890,9 +1886,9 @@ async function photoToDataUrl(file) {
 
 function bindAccount(root) {
   root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
-  $('#export-data', root).onclick = exportMyData;
   $('#delete-account', root).onclick = () => openDeleteAccountModal();
   if (state.user.is_guest) return;
+  $('#export-data', root).onclick = exportMyData;
   $('#avatar-file', root).onchange = async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
@@ -1956,7 +1952,7 @@ function openDeleteAccountModal() {
   openModal(`
     <form id="del-form" novalidate>
       <div class="modal-head"><h2>${guest ? 'Borrar todos tus datos' : 'Eliminar tu cuenta'}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
-      <div class="status warn">${icon('alert')}<span>${guest ? 'Se borrarán para siempre tus horarios, asignaturas, tareas, exámenes y eventos.' : 'Se borrarán para siempre tu cuenta y todos tus datos.'} Si quieres conservarlos, descárgalos antes desde «Tus datos».</span></div>
+      <div class="status warn">${icon('alert')}<span>${guest ? 'Se borrarán para siempre tus horarios, asignaturas, tareas, exámenes y eventos. Si quieres conservarlos, crea antes una cuenta.' : 'Se borrarán para siempre tu cuenta y todos tus datos. Si quieres conservarlos, descárgalos antes desde «Tus datos».'}</span></div>
       ${guest ? '' : '<label class="field"><span>Escribe tu contraseña para confirmar</span><input type="password" name="password" autocomplete="current-password" required></label>'}
       <div class="error" id="form-error"></div>
       <div class="modal-foot">
