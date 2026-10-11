@@ -290,7 +290,7 @@ function renderAuth(mode) {
       <div class="error" id="auth-error"></div>
       <button class="btn btn-primary" type="submit">${isLogin ? 'Entrar' : 'Crear cuenta'}</button>
       <div class="switch">${isLogin ? '¿Aún no tienes cuenta? <a data-mode="register">Regístrate</a>' : '¿Ya tienes cuenta? <a data-mode="login">Inicia sesión</a>'}</div>
-      <nav class="legal-links"><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">Aviso legal</a><a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a><a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a><a href="/legal.html#cookies" target="_blank" rel="noopener">Cookies</a></nav>
+      <nav class="legal-links"><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">Aviso legal</a><a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a><a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a><a href="/legal.html#cookies" target="_blank" rel="noopener">Cookies</a><a href="/contacto.html" target="_blank" rel="noopener">Contacto</a></nav>
     </form>
     </div>
     </div>`;
@@ -345,6 +345,7 @@ function renderShell() {
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
+          <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
           <hr>
           <button role="menuitem" id="logout" class="danger">${icon('logout')}Cerrar sesión</button>
         </div>
@@ -1713,12 +1714,13 @@ function accountView() {
     </section>
 
     <section class="card">
-      <h2>Textos legales</h2>
+      <h2>Ayuda y textos legales</h2>
       <ul class="legal-list">
         <li><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">${icon('doc')}Aviso legal</a></li>
         <li><a href="/legal.html#privacidad" target="_blank" rel="noopener">${icon('shield')}Política de privacidad</a></li>
         <li><a href="/legal.html#terminos" target="_blank" rel="noopener">${icon('doc')}Términos de uso</a></li>
         <li><a href="/legal.html#cookies" target="_blank" rel="noopener">${icon('doc')}Política de cookies</a></li>
+        <li><a href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a></li>
       </ul>
     </section>
 

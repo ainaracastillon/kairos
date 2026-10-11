@@ -29,13 +29,13 @@ function parseFrom(from) {
   return m ? { name: m[1] || 'Kairos', email: m[2] } : { name: 'Kairos', email: from.trim() };
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, replyTo }) {
   // Brevo: gratis hasta 300 correos al día y permite usar como remitente un correo verificado (p. ej. un Gmail).
   if (process.env.BREVO_API_KEY) {
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ sender: parseFrom(MAIL_FROM), to: [{ email: to }], subject, textContent: text, htmlContent: html }),
+      body: JSON.stringify({ sender: parseFrom(MAIL_FROM), to: [{ email: to }], subject, textContent: text, htmlContent: html, ...(replyTo ? { replyTo: { email: replyTo } } : {}) }),
     });
     if (!res.ok) throw new Error(`No se pudo enviar el correo (${res.status}): ${await res.text().catch(() => '')}`);
     return;
@@ -44,13 +44,13 @@ async function sendMail({ to, subject, text, html }) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, text, html }),
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, text, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
     });
     if (!res.ok) throw new Error(`No se pudo enviar el correo (${res.status}): ${await res.text().catch(() => '')}`);
     return;
   }
   if (transport) {
-    await transport.sendMail({ from: MAIL_FROM, to, subject, text, html });
+    await transport.sendMail({ from: MAIL_FROM, to, subject, text, html, replyTo });
     return;
   }
   console.log(`\n[correo sin SMTP] Para: ${to}\nAsunto: ${subject}\n${text}\n`);
@@ -115,4 +115,7 @@ async function pushToUser(db, userId, payload) {
   return sent;
 }
 
-module.exports = { sendMail, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
+/** A quién llegan los mensajes del formulario de contacto (nunca se muestra en la web). */
+const contactInbox = () => process.env.CONTACT_TO || parseFrom(MAIL_FROM).email;
+
+module.exports = { contactInbox, sendMail, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };

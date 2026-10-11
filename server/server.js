@@ -366,6 +366,46 @@ async function main() {
     return null;
   });
 
+  /* ---------- formulario de contacto (sin mostrar ningún correo en la web) ---------- */
+  const contactHits = new Map();
+  route('POST', '/contact', async ({ body, req, uid }) => {
+    // Trampa para robots: un campo oculto que las personas no rellenan, y un tiempo mínimo para escribir.
+    if (body.website || (Number(body.elapsed_ms) > 0 && Number(body.elapsed_ms) < 2500)) return { ok: true };
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const now = Date.now();
+    const hits = (contactHits.get(ip) || []).filter((t) => now - t < 60 * 60000);
+    if (hits.length >= 5) throw new HttpError(429, 'Has enviado varios mensajes seguidos. Vuelve a intentarlo dentro de un rato.');
+    const name = str(body.name, 80);
+    const email = str(body.email, 200).toLowerCase();
+    const topic = str(body.topic, 60) || 'Otro';
+    const message = String(body.message ?? '').trim().slice(0, 5000);
+    if (!name) throw bad('Escribe tu nombre');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Escribe un correo electrónico válido para poder responderte');
+    if (message.length < 10) throw bad('Cuéntanos un poco más (mínimo 10 caracteres)');
+    if (body.accept_privacy !== true) throw bad('Tienes que aceptar la Política de privacidad para enviar el mensaje');
+    hits.push(now);
+    contactHits.set(ip, hits);
+    const saved = await db.run('INSERT INTO contact_messages (user_id, name, email, topic, message, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      [uid || null, name, email, topic, message, nowIso()]);
+    try {
+      await notify.sendMail({
+        to: notify.contactInbox(),
+        replyTo: email,
+        subject: `[Kairos · ${topic}] Mensaje de ${name}`,
+        text: `De: ${name} <${email}>${uid ? ' (usuario registrado)' : ''}\nTema: ${topic}\n\n${message}\n\nResponde a este correo para contestar directamente.`,
+        html: notify.mailHtml(`Nuevo mensaje: ${topic}`,
+          `<p style="margin:0 0 4px"><b>De:</b> ${notify.escHtml(name)} &lt;${notify.escHtml(email)}&gt;${uid ? ' · usuario registrado' : ''}</p>
+           <p style="margin:0 0 14px"><b>Tema:</b> ${notify.escHtml(topic)}</p>
+           <div style="white-space:pre-wrap;background:#f6f4ef;border-radius:8px;padding:12px 14px">${notify.escHtml(message)}</div>
+           <p style="color:#6c7478;font-size:13px;margin:14px 0 0">Pulsa «Responder» en tu correo para contestar directamente a ${notify.escHtml(name)}.</p>`, appUrl(req)),
+      });
+      await db.run('UPDATE contact_messages SET emailed = 1 WHERE id = ?', [saved.id]);
+    } catch (e) {
+      console.error('[contacto] no se pudo enviar el aviso por correo; el mensaje queda guardado', e.message);
+    }
+    return { ok: true };
+  }, { auth: false });
+
   route('POST', '/me/test-email', async ({ uid, req }) => {
     const u = await getUser(uid);
     await notify.sendMail({
