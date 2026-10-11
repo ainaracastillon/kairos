@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <script src="/nozoom.js"></script>
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#14213d">
   <title>Textos legales · Kairos</title>
@@ -16,6 +17,7 @@
       :root { --bg: #121619; --surface: #1a1f23; --text: #e8ecec; --muted: #a2abaf; --border: #2d343a; --accent: #8cc3cf; }
     }
     * { box-sizing: border-box; }
+    html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     html { scroll-padding-top: 150px; }
     body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
     header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }

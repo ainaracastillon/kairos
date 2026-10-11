@@ -60,6 +60,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Sin zoom con doble toque ni ajuste automático del tamaño de letra al girar el móvil. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 14.5px; line-height: 1.45; -webkit-font-smoothing: antialiased;
   /* Los textos largos (sin límite de caracteres) parten la línea en vez de ensanchar la página. */
@@ -297,7 +299,7 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 /* ---------- móvil ---------- */
 @media (max-width: 760px) {
   body { font-size: 15px; }
-  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], select, textarea { font-size: 16px; }
+  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=search], select, textarea { font-size: 16px; }
   .show-mobile { display: flex; }
   .hide-mobile { display: none !important; }
   .short { display: inline; }
