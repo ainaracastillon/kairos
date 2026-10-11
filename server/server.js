@@ -28,7 +28,7 @@ const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'ainara14cs@hotmail.co
    Utilidades
    ============================================================ */
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, extra = null) { super(message); this.status = status; this.extra = extra; }
 }
 const bad = (msg) => new HttpError(400, msg);
 const notFound = (what = 'No encontrado') => new HttpError(404, what);
@@ -136,13 +136,14 @@ const DEFAULT_SLOTS = [
 async function main() {
   const db = await openDb();
   // Columnas añadidas después de la primera versión (si ya existen, se ignora el error).
-  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT', "role TEXT NOT NULL DEFAULT 'user'", 'suspended_at TEXT', 'last_seen_at TEXT', 'is_guest INTEGER NOT NULL DEFAULT 0']) {
+  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT', "role TEXT NOT NULL DEFAULT 'user'", 'suspended_at TEXT', 'last_seen_at TEXT', 'is_guest INTEGER NOT NULL DEFAULT 0',
+    'suspend_reason TEXT', 'delete_suggested_at TEXT', 'delete_suggested_by TEXT', 'delete_suggested_reason TEXT']) {
     await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
   }
   await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
-  await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
+  await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
 
   /* ---------- consultas de apoyo ---------- */
@@ -251,6 +252,20 @@ async function main() {
     return s.user_id;
   }
 
+  /** Error 403 con el motivo de la suspensión, para que la app se lo enseñe a la persona. */
+  const suspendedError = (u) => new HttpError(403, 'Tu cuenta está suspendida.', {
+    suspended: { reason: u.suspend_reason || '', at: u.suspended_at, has_account: !u.is_guest },
+  });
+  /** Si la sesión es de una cuenta suspendida, lanza ese error. */
+  async function checkSuspendedSession(req) {
+    const token = parseCookies(req)[COOKIE];
+    if (!token) return;
+    const s = await db.get('SELECT * FROM sessions WHERE token_hash = ?', [sha256(token)]);
+    if (!s || s.expires_at < nowIso()) return;
+    const u = await getUser(s.user_id);
+    if (u?.suspended_at) throw suspendedError(u);
+  }
+
   /* Límite sencillo de intentos de acceso por IP */
   const attempts = new Map();
   function rateLimit(req) {
@@ -297,6 +312,7 @@ async function main() {
   /** Empezar sin cuenta: se crea un usuario invitado unido a este dispositivo por la cookie de sesión. */
   const guestHits = new Map();
   route('POST', '/auth/guest', async ({ req, res, body }) => {
+    await checkSuspendedSession(req);
     const existing = await currentUser(req);
     if (existing) return { user: await userOut(existing.id) };
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
@@ -343,7 +359,7 @@ async function main() {
     const email = str(body.email, 200).toLowerCase();
     const u = await db.get('SELECT * FROM users WHERE email = ?', [email]);
     if (!u || !checkPassword(String(body.password || ''), u.password_hash)) throw new HttpError(401, 'Correo o contraseña incorrectos');
-    if (u.suspended_at) throw new HttpError(403, 'Tu cuenta está suspendida. Si crees que es un error, escríbenos desde el formulario de contacto.');
+    if (u.suspended_at) throw suspendedError(u);
     const prev = await currentUser(req);
     if (prev?.is_guest) await deleteUserData(prev.id);
     await startSession(res, u.id);
@@ -471,6 +487,10 @@ async function main() {
 
   /** Borra una cuenta y todos sus datos. */
   async function deleteUserData(uid) {
+    // La cuenta de la superadministradora no se borra nunca desde la app (solo cambiando el código o la base de datos).
+    const target = await getUser(uid);
+    if (!target) return;
+    if (target.role === 'superadmin' || target.email === SUPERADMIN_EMAIL) throw new HttpError(403, 'La cuenta de la superadministradora no se puede eliminar.');
     await db.tx(async (q) => {
       await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
       for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions', 'password_resets']) {
@@ -512,7 +532,8 @@ async function main() {
   const count = async (sql, params = []) => Number((await db.get(sql, params))?.n || 0);
   const adminUserRow = (u, c = {}) => ({
     id: u.id, name: u.is_guest ? 'Sin cuenta' : u.name, email: u.is_guest ? '' : u.email, is_guest: Boolean(u.is_guest), role: u.role || 'user',
-    created_at: u.created_at, last_seen_at: u.last_seen_at || null, suspended_at: u.suspended_at || null,
+    created_at: u.created_at, last_seen_at: u.last_seen_at || null, suspended_at: u.suspended_at || null, suspend_reason: u.suspend_reason || '',
+    delete_suggested_at: u.delete_suggested_at || null, delete_suggested_by: u.delete_suggested_by || '', delete_suggested_reason: u.delete_suggested_reason || '',
     avatar_url: u.avatar_updated ? `/api/admin/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar_updated)}` : null,
     timetables: Number(c.timetables || 0), tasks: Number(c.tasks || 0), exams: Number(c.exams || 0), events: Number(c.events || 0),
   });
@@ -532,6 +553,7 @@ async function main() {
         guests: await count('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1'),
         admins: await count("SELECT COUNT(*) AS n FROM users WHERE role IN ('admin', 'superadmin')"),
         suspended: await count('SELECT COUNT(*) AS n FROM users WHERE suspended_at IS NOT NULL'),
+        delete_suggested: await count('SELECT COUNT(*) AS n FROM users WHERE delete_suggested_at IS NOT NULL'),
         new7: await count('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?', [ago(7)]),
         guests_active7: await count('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1 AND last_seen_at >= ?', [ago(7)]),
         new30: signups.length,
@@ -571,10 +593,12 @@ async function main() {
     if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push(`%${q}%`, `%${q}%`); }
     if (filter === 'admins') where.push("u.role IN ('admin', 'superadmin')");
     if (filter === 'suspended') where.push('u.suspended_at IS NOT NULL');
+    if (filter === 'delete_suggested') where.push('u.delete_suggested_at IS NOT NULL');
     if (filter === 'accounts') where.push('u.is_guest = 0');
     if (filter === 'guests') where.push('u.is_guest = 1');
     if (filter === 'active') where.push('u.last_seen_at >= ?'), params.push(new Date(Date.now() - 7 * 86400000).toISOString());
-    const sql = `SELECT u.id, u.name, u.email, u.role, u.is_guest, u.created_at, u.last_seen_at, u.suspended_at, u.avatar_updated,
+    const sql = `SELECT u.id, u.name, u.email, u.role, u.is_guest, u.created_at, u.last_seen_at, u.suspended_at, u.suspend_reason,
+        u.delete_suggested_at, u.delete_suggested_by, u.delete_suggested_reason, u.avatar_updated,
         (SELECT COUNT(*) FROM timetables t WHERE t.user_id = u.id) AS timetables,
         (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'task') AS tasks,
         (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'exam') AS exams,
@@ -626,18 +650,53 @@ async function main() {
     return { ok: true };
   });
 
-  route('PUT', '/admin/users/:id/suspend', async ({ uid, params, body }) => {
+  route('PUT', '/admin/users/:id/suspend', async ({ uid, params, body, req }) => {
     const admin = await requireAdmin(uid);
     const t = await targetUser(admin, params.id);
     const suspend = body.suspended === true;
-    const reason = str(body.reason, 300);
+    const reason = str(body.reason, 500);
     if (suspend) {
-      await db.run('UPDATE users SET suspended_at = ? WHERE id = ?', [nowIso(), t.id]);
-      await db.run('DELETE FROM sessions WHERE user_id = ?', [t.id]);
+      // El motivo es obligatorio: es lo que verá la persona al intentar entrar.
+      if (reason.length < 5) throw bad('Escribe el motivo de la suspensión. La persona lo verá al entrar.');
+      await db.run('UPDATE users SET suspended_at = ?, suspend_reason = ? WHERE id = ?', [nowIso(), reason, t.id]);
+      if (!t.is_guest) {
+        const base = appUrl(req).replace(/\/$/, '');
+        const esc = notify.escHtml;
+        notify.sendMail({
+          to: t.email,
+          subject: 'Tu cuenta de Kairos está suspendida',
+          text: `Hola, ${t.name}.\n\nTu cuenta de Kairos se ha suspendido por este motivo:\n\n${reason}\n\nMientras esté suspendida no podrás entrar, pero tus datos se conservan. Si crees que es un error o quieres reclamar, escríbenos desde el formulario de contacto eligiendo «Reclamar una suspensión»:\n${base}/contacto.html?tema=Reclamar`,
+          html: notify.mailHtml('Tu cuenta está suspendida', `<p>Hola, ${esc(t.name)}.</p>
+            <p>Tu cuenta de Kairos se ha suspendido por este motivo:</p>
+            <blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #b9432c;background:#f6f4ef;border-radius:6px">${esc(reason)}</blockquote>
+            <p>Mientras esté suspendida no podrás entrar, pero tus datos se conservan.</p>
+            <p>Si crees que es un error o quieres reclamar, escríbenos:</p>
+            <p style="text-align:center;margin:18px 0"><a href="${esc(base)}/contacto.html?tema=Reclamar" style="display:inline-block;background:#2c5f6f;color:#fff;text-decoration:none;padding:11px 20px;border-radius:9px;font-weight:600">Reclamar la suspensión</a></p>`,
+          base, { button: false, footer: 'Recibes este correo porque se ha suspendido tu cuenta de Kairos.' }),
+        }).catch((e) => console.error('[correo] suspensión:', e.message));
+      }
     } else {
-      await db.run('UPDATE users SET suspended_at = NULL WHERE id = ?', [t.id]);
+      await db.run('UPDATE users SET suspended_at = NULL, suspend_reason = NULL WHERE id = ?', [t.id]);
     }
     await logAdmin(admin, suspend ? 'Suspender cuenta' : 'Reactivar cuenta', t, reason);
+    return { ok: true };
+  });
+
+  /* Los administradores sugieren eliminar una cuenta; solo la superadministradora la elimina. */
+  route('POST', '/admin/users/:id/suggest-delete', async ({ uid, params, body }) => {
+    const admin = await requireAdmin(uid);
+    const t = await targetUser(admin, params.id);
+    const reason = str(body.reason, 500);
+    if (reason.length < 5) throw bad('Explica por qué sugieres eliminar esta cuenta.');
+    await db.run('UPDATE users SET delete_suggested_at = ?, delete_suggested_by = ?, delete_suggested_reason = ? WHERE id = ?', [nowIso(), admin.name, reason, t.id]);
+    await logAdmin(admin, 'Sugerir eliminación', t, reason);
+    return { ok: true };
+  });
+  route('DELETE', '/admin/users/:id/suggest-delete', async ({ uid, params }) => {
+    const admin = await requireAdmin(uid);
+    const t = await targetUser(admin, params.id);
+    await db.run('UPDATE users SET delete_suggested_at = NULL, delete_suggested_by = NULL, delete_suggested_reason = NULL WHERE id = ?', [t.id]);
+    await logAdmin(admin, admin.role === 'superadmin' ? 'Descartar sugerencia de eliminación' : 'Retirar sugerencia de eliminación', t);
     return { ok: true };
   });
 
@@ -650,7 +709,7 @@ async function main() {
   });
 
   route('DELETE', '/admin/users/:id', async ({ uid, params, body }) => {
-    const admin = await requireAdmin(uid);
+    const admin = await requireSuper(uid);
     if (!checkPassword(String(body.password || ''), admin.password_hash)) throw bad('Tu contraseña no es correcta');
     const t = await targetUser(admin, params.id);
     await logAdmin(admin, 'Eliminar cuenta', t, str(body.reason, 300));
@@ -1152,7 +1211,10 @@ async function main() {
     const m = sub.match(r.re);
     const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
     const uid = await sessionUser(req);
-    if (r.auth && !uid) throw new HttpError(401, 'Inicia sesión para continuar');
+    if (r.auth && !uid) {
+      await checkSuspendedSession(req);
+      throw new HttpError(401, 'Inicia sesión para continuar');
+    }
     const body = req.method === 'GET' ? {} : await readBody(req);
     const data = await r.handler({ req, res, body, params, uid });
     if (data && data.__binary) {
@@ -1211,7 +1273,7 @@ async function main() {
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error(err);
-      if (!res.headersSent) sendJson(res, status, { error: status === 500 ? 'Error del servidor. Vuelve a intentarlo.' : err.message });
+      if (!res.headersSent) sendJson(res, status, { error: status === 500 ? 'Error del servidor. Vuelve a intentarlo.' : err.message, ...(err.extra || {}) });
       else res.end();
     }
   });

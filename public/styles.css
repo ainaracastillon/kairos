@@ -675,9 +675,10 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 /* ============================================================
    Panel de administración
    ============================================================ */
-.admin { max-width: 1040px; width: 100%; margin: 0 auto; padding-bottom: 28px; }
+.scroll > .admin { max-width: 1040px; width: 100%; margin: 0 auto; padding-bottom: 28px; }
 .admin-head { display: flex; align-items: center; gap: 10px; margin: 2px 0 14px; }
 .admin-head h2 { font-size: 26px; margin: 0; }
+.admin-head .badge-role { flex: none; }
 .admin-tabs { display: flex; width: 100%; margin-bottom: 16px; }
 .admin-tabs button { flex: 1; justify-content: center; position: relative; }
 .tab-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
@@ -796,3 +797,18 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .auth .forgot-link:hover { text-decoration: underline; }
 .status.ok { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--text); }
 .status.ok .i { color: var(--success); }
+
+/* ---------- Cuenta suspendida ---------- */
+.suspended-wrap { grid-template-columns: 1fr; }
+.suspended-wrap .auth-side { margin: 0 auto; }
+.auth.suspended { display: flex; flex-direction: column; }
+.auth.suspended .suspended-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; margin: 18px 0 14px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.auth.suspended .suspended-icon .i { width: 26px; height: 26px; }
+.suspend-reason { border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border)); border-left: 4px solid var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); border-radius: 10px; padding: 12px 14px; margin: 0 0 18px; }
+.suspend-reason b { font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--danger); }
+.suspend-reason p { margin: 4px 0 0; white-space: pre-wrap; }
+.suspended-h { font-size: 17px; margin: 4px 0 4px; }
+.auth.suspended .hint { margin: 0 0 16px; }
+.auth.suspended .btn-primary { justify-content: center; text-decoration: none; }
+.auth.suspended .auth-secondary { margin-top: 10px; }
+.badge-role.suggested { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border: 1px dashed color-mix(in srgb, var(--danger) 45%, transparent); }

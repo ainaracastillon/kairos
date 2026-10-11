@@ -117,7 +117,14 @@ async function api(method, url, body) {
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401 && state.user) { state.user = null; closeModal(); renderAuth('welcome'); }
-    throw new Error(data?.error || `Error ${res.status}`);
+    const err = new Error(data?.error || `Error ${res.status}`);
+    if (res.status === 403 && data?.suspended) {
+      err.suspended = true;
+      state.user = null;
+      closeModal();
+      renderSuspended({ ...data.suspended, session: url !== '/auth/login' });
+    }
+    throw err;
   }
   return data;
 }
@@ -360,7 +367,7 @@ function renderAuth(mode = 'welcome', opts = {}) {
       const email = root.email?.value.trim();
       return renderAuth(m.dataset.mode, email ? { email } : {});
     }
-    if (e.target.closest('[data-back]')) { e.preventDefault(); start().catch(() => renderAuth('welcome')); }
+    if (e.target.closest('[data-back]')) { e.preventDefault(); start().catch((err) => { if (!err.suspended) renderAuth('welcome'); }); }
   });
   if (isWelcome) {
     $('#start-guest').onclick = async (e) => {
@@ -441,9 +448,36 @@ function renderAuth(mode = 'welcome', opts = {}) {
       await start();
       if (isUpgrade) toast('¡Cuenta creada! Ya puedes entrar desde cualquier dispositivo.');
     } catch (err) {
+      if (err.suspended) return;
       $('#auth-error').textContent = err.message;
       btn.disabled = false;
     }
+  };
+}
+
+/** Pantalla para una cuenta suspendida: el motivo y dónde reclamar. */
+function renderSuspended(info) {
+  const when = info.at ? new Date(info.at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  $('#app').innerHTML = `
+    <div class="auth-wrap suspended-wrap">
+    <div class="auth-side">
+    <div class="auth suspended">
+      ${brand()}
+      <div class="suspended-icon">${icon('alert')}</div>
+      <h2>${info.has_account === false ? 'Tu acceso está suspendido' : 'Tu cuenta está suspendida'}</h2>
+      <p class="sub">${when ? `Desde el ${esc(when)}. ` : ''}Mientras dure la suspensión no puedes usar Kairos, pero tus datos se conservan.</p>
+      <div class="suspend-reason"><b>Motivo</b><p>${esc(info.reason || 'No se ha indicado un motivo.')}</p></div>
+      <h3 class="suspended-h">¿Crees que es un error?</h3>
+      <p class="hint">Puedes reclamar escribiéndonos desde el formulario de contacto. Elige el tema «Reclamar una suspensión», cuéntanos lo que ha pasado e indica el correo de tu cuenta. Revisaremos tu caso y te responderemos por correo.</p>
+      <a class="btn btn-primary" href="/contacto.html?tema=Reclamar" target="_blank" rel="noopener">${icon('mail')}Reclamar la suspensión</a>
+      <button class="btn auth-secondary" type="button" id="susp-out">${info.session ? 'Cerrar sesión' : 'Volver al inicio'}</button>
+      ${LEGAL_NAV}
+    </div>
+    </div>
+    </div>`;
+  $('#susp-out').onclick = async () => {
+    if (info.session) await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', credentials: 'same-origin' }).catch(() => {});
+    renderAuth('welcome');
   };
 }
 
@@ -1922,11 +1956,14 @@ function accountView() {
 
     ${LEGAL_LIST_CARD()}
 
-    <section class="card danger-zone">
+    ${u.is_superadmin ? `<section class="card">
+      <h2>Eliminar cuenta</h2>
+      <div class="status info">${icon('shield')}<span>La cuenta de superadministradora está protegida: no se puede eliminar ni suspender desde la app.</span></div>
+    </section>` : `<section class="card danger-zone">
       <h2>Eliminar cuenta</h2>
       <p class="hint">Se borrarán para siempre tu cuenta y todos tus horarios, asignaturas, tareas, exámenes y eventos. No se puede deshacer.</p>
       <button class="btn btn-danger" id="delete-account">${icon('trash')}Eliminar mi cuenta</button>
-    </section>
+    </section>`}
 
     <button class="btn btn-ghost logout-line" id="account-logout">${icon('logout')}Cerrar sesión</button>
   </div></div>`;
@@ -1968,7 +2005,8 @@ async function photoToDataUrl(file) {
 
 function bindAccount(root) {
   root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
-  $('#delete-account', root).onclick = () => openDeleteAccountModal();
+  const delBtn = $('#delete-account', root);
+  if (delBtn) delBtn.onclick = () => openDeleteAccountModal();
   if (state.user.is_guest) return;
   $('#export-data', root).onclick = exportMyData;
   $('#avatar-file', root).onchange = async (e) => {
@@ -2167,6 +2205,7 @@ async function adminSummary() {
         ${statTile(s.content.events, 'Eventos')}${statTile(s.content.done, 'Completadas')}
         ${statTile(s.users.email_on, 'Con avisos por correo')}${statTile(s.users.with_push, 'Con notificaciones')}
         ${statTile(s.users.suspended, 'Cuentas suspendidas')}
+        ${statTile(s.users.delete_suggested ?? 0, 'Eliminación sugerida')}
       </div>
     </section>
     <section class="card admin-card">
@@ -2187,12 +2226,12 @@ function adminAvatar(u) {
   return u.avatar_url ? `<span class="avatar has-photo"><img src="${esc(u.avatar_url)}" alt="" loading="lazy"></span>` : `<span class="avatar">${esc(initials(u.name))}</span>`;
 }
 function userBadges(u) {
-  return `${u.is_guest ? '<span class="badge-role guest">Sin cuenta</span>' : ''}${u.role !== 'user' ? `<span class="badge-role ${u.role}">${ROLE_LABEL[u.role]}</span>` : ''}${u.suspended_at ? '<span class="badge-role suspended">Suspendida</span>' : ''}`;
+  return `${u.is_guest ? '<span class="badge-role guest">Sin cuenta</span>' : ''}${u.role !== 'user' ? `<span class="badge-role ${u.role}">${ROLE_LABEL[u.role]}</span>` : ''}${u.suspended_at ? '<span class="badge-role suspended">Suspendida</span>' : ''}${u.delete_suggested_at ? '<span class="badge-role suggested">Eliminación sugerida</span>' : ''}`;
 }
 
 async function adminUsers() {
   const list = await api('GET', `/admin/users?q=${encodeURIComponent(admin.q)}&filter=${admin.filter}`);
-  const filters = [['all', 'Todos'], ['accounts', 'Con cuenta'], ['guests', 'Sin cuenta'], ['active', 'Activos'], ['admins', 'Admins'], ['suspended', 'Suspendidos']];
+  const filters = [['all', 'Todos'], ['accounts', 'Con cuenta'], ['guests', 'Sin cuenta'], ['active', 'Activos'], ['admins', 'Admins'], ['suspended', 'Suspendidos'], ['delete_suggested', 'Eliminación sugerida']];
   return `
     <div class="admin-tools">
       <input type="search" id="admin-q" placeholder="Buscar por nombre o correo" value="${esc(admin.q)}" aria-label="Buscar usuarios">
@@ -2233,6 +2272,8 @@ async function openAdminUser(id) {
       ${row('Mensajes de contacto', String(u.messages))}
     </div>
     <p class="hint" style="margin:10px 0 0">Por privacidad, desde aquí no se ve el contenido de sus horarios, tareas ni notas.</p>
+    ${u.suspended_at ? `<div class="status warn" style="margin-top:12px">${icon('alert')}<span><b>Suspendida el ${esc(fmtDay(u.suspended_at))}.</b> Motivo que ve la persona: «${esc(u.suspend_reason || 'sin motivo')}»</span></div>` : ''}
+    ${u.delete_suggested_at ? `<div class="status warn" style="margin-top:12px">${icon('trash')}<span><b>${esc(u.delete_suggested_by || 'Un administrador')} sugirió eliminarla el ${esc(fmtDay(u.delete_suggested_at))}.</b> «${esc(u.delete_suggested_reason)}»${me.is_superadmin ? '' : ' Solo la superadministradora puede eliminar cuentas.'}</span></div>` : ''}
     ${self ? '<p class="hint">Esta es tu cuenta. Gestiónala desde «Mi cuenta».</p>' : protectedUser ? `<div class="status info" style="margin-top:12px">${icon('shield')}<span>${u.role === 'superadmin' ? 'La cuenta de la superadministradora está protegida.' : 'Solo la superadministradora puede gestionar a otros administradores.'}</span></div>` : ''}
     ${canAct ? `<div class="admin-actions">
       ${me.is_superadmin && !u.is_guest ? (u.role === 'admin'
@@ -2242,7 +2283,10 @@ async function openAdminUser(id) {
       ${u.suspended_at
         ? `<button class="btn" data-act="unsuspend">${icon('check')}Reactivar cuenta</button>`
         : `<button class="btn btn-danger" data-act="suspend">${icon('alert')}Suspender cuenta</button>`}
-      <button class="btn btn-danger" data-act="delete">${icon('trash')}Eliminar cuenta</button>
+      ${u.delete_suggested_at
+        ? `<button class="btn" data-act="unsuggest">${icon('x')}${me.is_superadmin ? 'Descartar sugerencia' : 'Retirar sugerencia'}</button>`
+        : me.is_superadmin ? '' : `<button class="btn btn-danger" data-act="suggest">${icon('trash')}Sugerir eliminación</button>`}
+      ${me.is_superadmin ? `<button class="btn btn-danger" data-act="delete">${icon('trash')}Eliminar cuenta</button>` : ''}
     </div>` : ''}`, (root) => {
     root.onclick = async (e) => {
       const b = e.target.closest('[data-act]');
@@ -2251,21 +2295,66 @@ async function openAdminUser(id) {
       let done;
       if (act === 'role') {
         const toAdmin = b.dataset.role === 'admin';
-        if (!confirm(toAdmin ? `¿Hacer administrador a ${u.name}? Podrá ver usuarios y mensajes, suspender y eliminar cuentas (no de otros administradores).` : `¿Quitar la administración a ${u.name}?`)) return;
+        if (!confirm(toAdmin ? `¿Hacer administrador a ${u.name}? Podrá ver usuarios y mensajes, suspender cuentas y sugerir que se eliminen (no de otros administradores). Solo tú puedes eliminarlas.` : `¿Quitar la administración a ${u.name}?`)) return;
         done = await attempt(() => api('PUT', `/admin/users/${u.id}/role`, { role: b.dataset.role }), toAdmin ? 'Ahora es administrador' : 'Ya no es administrador');
       } else if (act === 'logout') {
         if (!confirm(`¿Cerrar todas las sesiones de ${u.name}? Tendrá que volver a entrar.`)) return;
         done = await attempt(() => api('POST', `/admin/users/${u.id}/logout`), 'Sesiones cerradas');
       } else if (act === 'suspend') {
-        const reason = prompt(`Vas a suspender la cuenta de ${u.name}: no podrá entrar hasta que la reactives. Motivo (opcional, queda en el registro):`, '');
-        if (reason === null) return;
-        done = await attempt(() => api('PUT', `/admin/users/${u.id}/suspend`, { suspended: true, reason }), 'Cuenta suspendida');
+        return openReasonModal({
+          title: `Suspender la cuenta de ${u.name}`,
+          text: 'No podrá usar Kairos hasta que la reactives. Al intentar entrar verá este motivo y cómo reclamar' + (u.is_guest ? '.' : ', y también le llegará por correo.'),
+          label: 'Motivo de la suspensión (lo verá la persona)',
+          button: 'Suspender cuenta',
+          send: (reason) => api('PUT', `/admin/users/${u.id}/suspend`, { suspended: true, reason }),
+          ok: 'Cuenta suspendida',
+          after: () => { loadAdminTab(); openAdminUser(u.id); },
+        });
+      } else if (act === 'suggest') {
+        return openReasonModal({
+          title: `Sugerir eliminar la cuenta de ${u.name}`,
+          text: 'La superadministradora revisará la sugerencia y decidirá si la elimina. La persona no ve este motivo.',
+          label: 'Por qué sugieres eliminarla',
+          button: 'Enviar sugerencia',
+          send: (reason) => api('POST', `/admin/users/${u.id}/suggest-delete`, { reason }),
+          ok: 'Sugerencia enviada a la superadministradora',
+          after: () => { loadAdminTab(); openAdminUser(u.id); },
+        });
+      } else if (act === 'unsuggest') {
+        done = await attempt(() => api('DELETE', `/admin/users/${u.id}/suggest-delete`), me.is_superadmin ? 'Sugerencia descartada' : 'Sugerencia retirada');
       } else if (act === 'unsuspend') {
         done = await attempt(() => api('PUT', `/admin/users/${u.id}/suspend`, { suspended: false }), 'Cuenta reactivada');
       } else if (act === 'delete') {
         return openAdminDelete(u);
       }
       if (done) { closeModal(); loadAdminTab(); openAdminUser(u.id); }
+    };
+  });
+}
+
+/** Ventana con un motivo obligatorio (suspender o sugerir eliminación). */
+function openReasonModal({ title, text, label, button, send, ok, after }) {
+  openModal(`
+    <form id="reason-form" novalidate>
+      <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+      <p class="hint" style="margin-top:0">${esc(text)}</p>
+      <label class="field"><span>${esc(label)}</span><textarea name="reason" rows="4" maxlength="500" required placeholder="Por ejemplo: uso del formulario de contacto para enviar spam."></textarea></label>
+      <div class="error" id="form-error"></div>
+      <div class="modal-foot"><button type="button" class="btn" data-close>Cancelar</button><button class="btn btn-danger-solid">${esc(button)}</button></div>
+    </form>`, (root) => {
+    const f = $('#reason-form', root);
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const reason = f.reason.value.trim();
+      if (reason.length < 5) { $('#form-error', f).textContent = 'Escribe el motivo (al menos 5 caracteres).'; return; }
+      const b = $('.btn-danger-solid', f);
+      b.disabled = true;
+      try {
+        await send(reason);
+        closeModal();
+        toast(ok);
+        after?.();
+      } catch (err) { $('#form-error', f).textContent = err.message; b.disabled = false; }
     };
   });
 }
@@ -2894,8 +2983,8 @@ document.addEventListener('click', (e) => {
   } else {
     try {
       await start();
-    } catch {
-      renderAuth('welcome');
+    } catch (err) {
+      if (!err.suspended) renderAuth('welcome');
     }
   }
   // Actualiza la vista (hora actual, vencidas…) cada minuto.
