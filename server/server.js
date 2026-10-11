@@ -17,6 +17,7 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const PROD = process.env.NODE_ENV === 'production';
 const SESSION_DAYS = 90;
 const COOKIE = 'kairos_session';
+const TERMS_VERSION = '2026-10-11'; // fecha de los textos legales vigentes (public/legal.html)
 
 /* ============================================================
    Utilidades
@@ -59,6 +60,7 @@ function daysValue(v) {
   return days.sort((a, b) => a - b);
 }
 function validTimezone(tz) {
+  if (typeof tz !== 'string' || !tz) return false;
   try { new Intl.DateTimeFormat('es-ES', { timeZone: tz }); return true; } catch { return false; }
 }
 
@@ -122,6 +124,10 @@ const DEFAULT_SLOTS = [
 
 async function main() {
   const db = await openDb();
+  // Columnas añadidas después de la primera versión (si ya existen, se ignora el error).
+  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT']) {
+    await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
+  }
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
 
   /* ---------- consultas de apoyo ---------- */
@@ -248,11 +254,12 @@ async function main() {
     if (!name) throw bad('Escribe tu nombre');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Escribe un correo electrónico válido');
     if (password.length < 8) throw bad('La contraseña debe tener al menos 8 caracteres');
+    if (body.accept_terms !== true && body.accept_terms !== 'on') throw bad('Para crear la cuenta tienes que aceptar los Términos de uso y la Política de privacidad');
     if (await db.get('SELECT id FROM users WHERE email = ?', [email])) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
     const tz = validTimezone(body.timezone) ? body.timezone : 'Europe/Madrid';
     const uid = await db.tx(async (q) => {
-      const u = await q.run('INSERT INTO users (email, name, password_hash, timezone, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id',
-        [email, name, hashPassword(password), tz, nowIso()]);
+      const u = await q.run('INSERT INTO users (email, name, password_hash, timezone, created_at, accepted_terms_at, terms_version) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+        [email, name, hashPassword(password), tz, nowIso(), nowIso(), TERMS_VERSION]);
       const ttId = await createTimetable(q, u.id, { name: 'Mi horario', start_date: null, end_date: null, visible_days: [1, 2, 3, 4, 5] });
       await q.run('UPDATE users SET active_timetable_id = ? WHERE id = ?', [ttId, u.id]);
       return u.id;
@@ -309,6 +316,54 @@ async function main() {
     if (String(body.password || '').length < 8) throw bad('La nueva contraseña debe tener al menos 8 caracteres');
     await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [hashPassword(String(body.password)), uid]);
     return { ok: true };
+  });
+
+  route('PUT', '/me/email', async ({ uid, body }) => {
+    const u = await getUser(uid);
+    if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
+    const email = str(body.email, 200).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Escribe un correo electrónico válido');
+    if (email === u.email) return { user: await userOut(uid) };
+    if (await db.get('SELECT id FROM users WHERE email = ?', [email])) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
+    await db.run('UPDATE users SET email = ? WHERE id = ?', [email, uid]);
+    return { user: await userOut(uid) };
+  });
+
+  /** Derecho de acceso y portabilidad: todos los datos de la cuenta en un archivo JSON. */
+  route('GET', '/me/export', async ({ uid }) => {
+    const u = await getUser(uid);
+    return {
+      exported_at: nowIso(),
+      app: 'Kairos',
+      account: {
+        name: u.name, email: u.email, timezone: u.timezone, created_at: u.created_at,
+        accepted_terms_at: u.accepted_terms_at || null, terms_version: u.terms_version || null,
+        email_notifications: Boolean(u.email_notifications), default_reminder_minutes: u.default_reminder_minutes ?? null,
+        daily_digest: Boolean(u.daily_digest), digest_hour: u.digest_hour,
+      },
+      timetables: await timetablesOut(uid),
+      slots: await listSlots(uid),
+      subjects: await listSubjects(uid),
+      schedule: await listSchedule(uid),
+      items: await listItems(uid),
+      events: await listEvents(uid),
+      push_devices: await pushDevices(uid),
+    };
+  });
+
+  /** Derecho de supresión: borra la cuenta y todos sus datos. */
+  route('DELETE', '/me', async ({ uid, body, res }) => {
+    const u = await getUser(uid);
+    if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
+    await db.tx(async (q) => {
+      await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
+      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions']) {
+        await q.run(`DELETE FROM ${t} WHERE user_id = ?`, [uid]);
+      }
+      await q.run('DELETE FROM users WHERE id = ?', [uid]);
+    });
+    setCookie(res, '', 0);
+    return null;
   });
 
   route('POST', '/me/test-email', async ({ uid, req }) => {

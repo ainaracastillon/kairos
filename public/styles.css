@@ -629,3 +629,29 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .time-field[hidden] { display: none; }
 .day-actions { flex-wrap: nowrap; }
 @media (max-width: 400px) { .day-actions .btn { padding-left: 6px; padding-right: 6px; gap: 3px; font-size: 14px; } }
+
+/* Mi cuenta y textos legales */
+.user-menu .um-link { display: flex; align-items: center; gap: 11px; width: 100%; color: var(--text); text-decoration: none;
+  padding: 10px 11px; border-radius: 9px; font-weight: 500; font-size: 15px; }
+.user-menu .um-link:hover { background: var(--surface-2); }
+.account-head { display: flex; align-items: center; gap: 14px; }
+.avatar.big { width: 52px; height: 52px; font-size: 19px; flex: none; }
+.account-head h2 { margin: 0; }
+.inline-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.inline-form .field { flex: 1 1 220px; margin-bottom: 0; }
+.legal-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.legal-list a { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; font-weight: 500; }
+.legal-list a:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.legal-list .i { color: var(--accent); }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.danger-zone h2 { color: var(--danger); }
+.btn-danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger-solid:hover { filter: brightness(1.06); }
+.logout-line { margin: 0 auto 24px; display: flex; color: var(--muted); }
+.settings-foot { text-align: center; margin: 4px 0 24px; }
+.settings-foot a, .legal-accept a { color: var(--accent); font-weight: 600; }
+.legal-accept { align-items: flex-start; font-size: 13.5px; color: var(--muted); line-height: 1.45; margin: 2px 0 10px; }
+.legal-accept input { margin-top: 2px; }
+.legal-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 22px; font-size: 12.5px; }
+.legal-links a { color: var(--muted); text-decoration: none; }
+.legal-links a:hover { color: var(--accent); text-decoration: underline; }

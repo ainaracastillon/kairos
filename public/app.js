@@ -49,6 +49,8 @@ const ICONS = {
   event: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="m12 12.2 1.05 2.15 2.35.33-1.7 1.66.4 2.35-2.1-1.1-2.1 1.1.4-2.35-1.7-1.66 2.35-.33Z"/>',
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
+  shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  doc: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5M10 12.5h6M10 16.5h6"/>',
   palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.3-1.1-1.6-1.1-2.7 0-.9.7-1.6 1.7-1.6h2.1a4 4 0 0 0 4-4C20.5 6.6 16.7 3.5 12 3.5Z"/><circle cx="7.8" cy="11.2" r="1.1"/><circle cx="10" cy="7.6" r="1.1"/><circle cx="14.6" cy="7.6" r="1.1"/>',
 };
 const icon = (name, cls = '') =>
@@ -284,9 +286,11 @@ function renderAuth(mode) {
       <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required></label>
       <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required minlength="8">
         ${isLogin ? '' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
+      ${isLogin ? '' : `<label class="check-line legal-accept"><input type="checkbox" name="accept_terms" required><span>He leído y acepto los <a href="/legal.html#terminos" target="_blank" rel="noopener">Términos de uso</a> y la <a href="/legal.html#privacidad" target="_blank" rel="noopener">Política de privacidad</a>.</span></label>`}
       <div class="error" id="auth-error"></div>
       <button class="btn btn-primary" type="submit">${isLogin ? 'Entrar' : 'Crear cuenta'}</button>
       <div class="switch">${isLogin ? '¿Aún no tienes cuenta? <a data-mode="register">Regístrate</a>' : '¿Ya tienes cuenta? <a data-mode="login">Inicia sesión</a>'}</div>
+      <nav class="legal-links"><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">Aviso legal</a><a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a><a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a><a href="/legal.html#cookies" target="_blank" rel="noopener">Cookies</a></nav>
     </form>
     </div>
     </div>`;
@@ -295,6 +299,10 @@ function renderAuth(mode) {
   $('#auth-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
+    if (!isLogin) {
+      if (!fd.accept_terms) { $('#auth-error').textContent = 'Para crear la cuenta tienes que aceptar los Términos de uso y la Política de privacidad.'; return; }
+      fd.accept_terms = true;
+    }
     const btn = $('button[type=submit]', e.target);
     btn.disabled = true;
     try {
@@ -319,6 +327,7 @@ const VIEWS = [
   ['items', 'check', 'Tareas y exámenes', 'Tareas'],
   ['subjects', 'book', 'Asignaturas', 'Materias'],
   ['settings', 'sliders', 'Ajustes', 'Ajustes'],
+  ['account', 'user', 'Mi cuenta', 'Cuenta'],
 ];
 
 function renderShell() {
@@ -332,8 +341,10 @@ function renderShell() {
         </button>
         <div class="user-menu" id="user-menu" role="menu" hidden>
           <div class="um-head"><b class="um-name">${esc(state.user.name)}</b><small>${esc(state.user.email)}</small></div>
+          <button role="menuitem" data-view="account">${icon('user')}Mi cuenta</button>
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
+          <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <hr>
           <button role="menuitem" id="logout" class="danger">${icon('logout')}Cerrar sesión</button>
         </div>
@@ -377,8 +388,9 @@ function renderView() {
   const el = $('#view');
   const scrollEl = $('.scroll', el);
   const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
-  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, settings: settingsView }[view]();
+  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, settings: settingsView, account: accountView }[view]();
   if (view === 'settings') bindSettings(el);
+  if (view === 'account') bindAccount(el);
   if (view === 'week') { fitTimetable(el); updateSelectBar(); }
   const newScroll = $('.scroll', el);
   if (newScroll && el.dataset.lastView === view) newScroll.scrollTop = scrollTop;
@@ -1560,17 +1572,7 @@ function settingsView() {
       <datalist id="tz-list">${(Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).map((z) => `<option value="${z}">`).join('')}</datalist>
     </section>
 
-    <section class="card">
-      <h2>Cuenta</h2>
-      <label class="field"><span>Nombre</span><input type="text" id="s-name" value="${esc(u.name)}"></label>
-      <form id="pw-form">
-        <div class="row">
-          <label class="field"><span>Contraseña actual</span><input type="password" name="current" autocomplete="current-password" required></label>
-          <label class="field"><span>Nueva contraseña</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
-        </div>
-        <button class="btn">Cambiar contraseña</button>
-      </form>
-    </section>
+    <p class="hint settings-foot">Tu nombre, correo, contraseña y datos están en ${'<a href="#account">Mi cuenta</a>'}.</p>
   </div></div>`;
 }
 
@@ -1652,13 +1654,6 @@ function bindSettings(root) {
   $('#s-digest', root).onchange = (e) => saveSettings({ daily_digest: e.target.checked });
   $('#s-digest-hour', root).onchange = (e) => saveSettings({ digest_hour: Number(e.target.value) });
   $('#s-tz', root).onchange = async (e) => { if (!(await saveSettings({ timezone: e.target.value.trim() }))) e.target.value = state.user.timezone; };
-  $('#s-name', root).onchange = async (e) => {
-    if (await saveSettings({ name: e.target.value })) {
-      $('.userbox .name').textContent = state.user.name;
-      $('.userbox .avatar').textContent = initials(state.user.name);
-      $('.um-name').textContent = state.user.name;
-    }
-  };
   renderPushBox();
   $('#test-email', root).onclick = async (e) => {
     e.target.disabled = true;
@@ -1666,11 +1661,150 @@ function bindSettings(root) {
     e.target.disabled = false;
     if (r) toast(r.mail_configured ? `Correo de prueba enviado a ${state.user.email}` : 'SMTP sin configurar: el correo se ha mostrado en la consola del servidor');
   };
+}
+
+/* ============================================================
+   Mi cuenta
+   ============================================================ */
+function accountView() {
+  const u = state.user;
+  return `<div class="scroll"><div class="settings account">
+    <section class="card account-head">
+      <span class="avatar big" aria-hidden="true">${esc(initials(u.name))}</span>
+      <div><h2>${esc(u.name)}</h2><p class="hint" style="margin:2px 0 0">${esc(u.email)}</p></div>
+    </section>
+
+    <section class="card">
+      <h2>Perfil</h2>
+      <p class="hint">Tu nombre aparece en la app y en los correos de aviso.</p>
+      <form id="name-form" class="inline-form">
+        <label class="field"><span>Nombre</span><input type="text" name="name" value="${esc(u.name)}" maxlength="80" required></label>
+        <button class="btn">Guardar nombre</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Correo electrónico</h2>
+      <p class="hint">Es con el que entras y donde recibes los avisos. Para cambiarlo, confirma tu contraseña.</p>
+      <form id="email-form">
+        <div class="row">
+          <label class="field"><span>Nuevo correo</span><input type="email" name="email" autocomplete="email" value="${esc(u.email)}" required></label>
+          <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="current-password" required></label>
+        </div>
+        <button class="btn">Cambiar correo</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Contraseña</h2>
+      <form id="pw-form">
+        <div class="row">
+          <label class="field"><span>Contraseña actual</span><input type="password" name="current" autocomplete="current-password" required></label>
+          <label class="field"><span>Nueva contraseña</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+        </div>
+        <button class="btn">Cambiar contraseña</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Tus datos</h2>
+      <p class="hint">Descarga una copia de todo lo que Kairos guarda de ti: cuenta, horarios, asignaturas, tareas, exámenes y eventos.</p>
+      <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
+    </section>
+
+    <section class="card">
+      <h2>Textos legales</h2>
+      <ul class="legal-list">
+        <li><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">${icon('doc')}Aviso legal</a></li>
+        <li><a href="/legal.html#privacidad" target="_blank" rel="noopener">${icon('shield')}Política de privacidad</a></li>
+        <li><a href="/legal.html#terminos" target="_blank" rel="noopener">${icon('doc')}Términos de uso</a></li>
+        <li><a href="/legal.html#cookies" target="_blank" rel="noopener">${icon('doc')}Política de cookies</a></li>
+      </ul>
+    </section>
+
+    <section class="card danger-zone">
+      <h2>Eliminar cuenta</h2>
+      <p class="hint">Se borrarán para siempre tu cuenta y todos tus horarios, asignaturas, tareas, exámenes y eventos. No se puede deshacer.</p>
+      <button class="btn btn-danger" id="delete-account">${icon('trash')}Eliminar mi cuenta</button>
+    </section>
+
+    <button class="btn btn-ghost logout-line" id="account-logout">${icon('logout')}Cerrar sesión</button>
+  </div></div>`;
+}
+
+function refreshUserBox() {
+  $('.userbox .name').textContent = state.user.name;
+  $('.userbox .avatar').textContent = initials(state.user.name);
+  $('.um-name').textContent = state.user.name;
+  $('.um-head small').textContent = state.user.email;
+}
+
+function bindAccount(root) {
+  $('#name-form', root).onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await attempt(() => api('PUT', '/me/settings', { name: e.target.name.value }), 'Nombre guardado');
+    if (r) { state.user = r.user; refreshUserBox(); renderView(); }
+  };
+  $('#email-form', root).onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(e.target));
+    const r = await attempt(() => api('PUT', '/me/email', fd), 'Correo actualizado');
+    if (r) { state.user = r.user; refreshUserBox(); renderView(); }
+  };
   $('#pw-form', root).onsubmit = async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
     if ((await attempt(() => api('PUT', '/me/password', fd), 'Contraseña actualizada')) !== undefined) e.target.reset();
   };
+  $('#export-data', root).onclick = async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    const data = await attempt(() => api('GET', '/me/export'));
+    b.disabled = false;
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `kairos-mis-datos-${dateKey(new Date())}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast('Datos descargados');
+  };
+  $('#account-logout', root).onclick = () => $('#logout').click();
+  $('#delete-account', root).onclick = () => openDeleteAccountModal();
+}
+
+function openDeleteAccountModal() {
+  openModal(`
+    <form id="del-form" novalidate>
+      <div class="modal-head"><h2>Eliminar tu cuenta</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+      <div class="status warn">${icon('alert')}<span>Se borrarán para siempre tu cuenta y todos tus datos. Si quieres conservarlos, descárgalos antes desde «Tus datos».</span></div>
+      <label class="field"><span>Escribe tu contraseña para confirmar</span><input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="error" id="form-error"></div>
+      <div class="modal-foot">
+        <button type="button" class="btn" data-close>Cancelar</button>
+        <button class="btn btn-danger-solid">${icon('trash')}Eliminar definitivamente</button>
+      </div>
+    </form>`, (root) => {
+    const form = $('#del-form', root);
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!form.password.value) { $('#form-error', form).textContent = 'Escribe tu contraseña'; return; }
+      try {
+        await forgetThisDevice();
+        await api('DELETE', '/me', { password: form.password.value });
+        closeModal();
+        state.user = null;
+        location.hash = '';
+        renderAuth('login');
+        toast('Tu cuenta se ha eliminado');
+      } catch (err) {
+        $('#form-error', form).textContent = err.message;
+      }
+    };
+  });
 }
 
 /* ============================================================

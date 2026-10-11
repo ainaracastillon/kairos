@@ -70,7 +70,7 @@ function mailHtml(title, bodyHtml, appUrl) {
       ${bodyHtml}
     </div>
     ${appUrl ? `<p style="text-align:center;margin:18px 0 0"><a href="${escHtml(appUrl)}" style="display:inline-block;background:#14213d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600">Abrir Kairos</a></p>` : ''}
-    <p style="color:#6c7478;font-size:12px;text-align:center;margin-top:18px">Recibes este correo porque tienes activados los avisos en Kairos. Puedes cambiarlo en Ajustes.</p>
+    <p style="color:#6c7478;font-size:12px;text-align:center;margin-top:18px">Recibes este correo porque tienes activados los avisos en Kairos. Puedes cambiarlo en Ajustes.${appUrl ? ` · <a href="${escHtml(appUrl.replace(/\/$/, ''))}/legal.html#privacidad" style="color:#6c7478">Privacidad</a>` : ''}</p>
   </div></body></html>`;
 }
 
