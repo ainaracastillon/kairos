@@ -763,3 +763,25 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 @media (max-width: 560px) { .log-row { grid-template-columns: 1fr; gap: 2px; } }
 .tab-badge[hidden] { display: none; }
 .admin-tabs button { white-space: nowrap; gap: 5px; }
+
+/* ---------- Uso sin cuenta ---------- */
+.auth .auth-back { display: inline-block; margin-bottom: 14px; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.auth .auth-back:hover { color: var(--accent); }
+.auth .auth-note { text-align: center; margin: 10px 0 0; font-size: 13.5px; }
+.auth .auth-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 14px; color: var(--muted); font-size: 13px; }
+.auth .auth-divider::before, .auth .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.auth .auth-secondary { width: 100%; justify-content: center; padding: 11px; font-size: 15px; }
+.auth .auth-terms { text-align: center; margin: 16px 0 0; font-size: 12.5px; }
+.auth .auth-terms a { color: inherit; }
+.auth .status { margin-bottom: 16px; }
+.auth .status a { color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.avatar.guest { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border-strong); }
+.avatar.guest .i { width: 55%; height: 55%; }
+.user-menu .um-cta { color: var(--accent); font-weight: 600; }
+.badge-role.guest { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border-strong); }
+.account .guest-head { align-items: flex-start; }
+.guest-perks { list-style: none; padding: 0; margin: 4px 0 16px; display: grid; gap: 8px; }
+.guest-perks li { display: flex; gap: 8px; align-items: flex-start; }
+.guest-perks .i { width: 18px; height: 18px; color: var(--success); flex: none; margin-top: 2px; }
+.guest-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 520px) { .guest-actions .btn { flex: 1 1 100%; justify-content: center; } }

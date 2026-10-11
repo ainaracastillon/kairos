@@ -105,7 +105,7 @@
       form.message.addEventListener('input', () => { count.textContent = `${form.message.value.length} / 5000`; });
       // Si tienes la sesión iniciada en Kairos, se rellenan tu nombre y tu correo.
       fetch('/api/bootstrap', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
-        if (!d?.user) return;
+        if (!d?.user || d.user.is_guest) return;
         if (!form.name.value) form.name.value = d.user.name;
         if (!form.email.value) form.email.value = d.user.email;
       }).catch(() => {});

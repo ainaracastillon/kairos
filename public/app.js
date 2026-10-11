@@ -60,6 +60,7 @@ const brand = () => `<div class="brand">${LOGO}<span class="wordmark">Kairos</sp
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 /** Círculo con la foto de perfil o, si no hay, las iniciales. */
 function avatarHtml(u, cls = '') {
+  if (u.is_guest) return `<span class="avatar guest ${cls}" aria-hidden="true">${icon('user')}</span>`;
   return u.avatar_url
     ? `<span class="avatar has-photo ${cls}" aria-hidden="true"><img src="${esc(u.avatar_url)}" alt=""></span>`
     : `<span class="avatar ${cls}" aria-hidden="true">${esc(initials(u.name))}</span>`;
@@ -113,7 +114,7 @@ async function api(method, url, body) {
   });
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
-    if (res.status === 401 && state.user) { state.user = null; closeModal(); renderAuth('login'); }
+    if (res.status === 401 && state.user) { state.user = null; closeModal(); renderAuth('welcome'); }
     throw new Error(data?.error || `Error ${res.status}`);
   }
   return data;
@@ -270,8 +271,44 @@ function refresh() {
 /* ============================================================
    Inicio de sesión / registro
    ============================================================ */
-function renderAuth(mode) {
+const LEGAL_NAV = '<nav class="legal-links"><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">Aviso legal</a><a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a><a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a><a href="/legal.html#cookies" target="_blank" rel="noopener">Cookies</a><a href="/contacto.html" target="_blank" rel="noopener">Contacto</a></nav>';
+const TERMS_LINKS = 'los <a href="/legal.html#terminos" target="_blank" rel="noopener">Términos de uso</a> y la <a href="/legal.html#privacidad" target="_blank" rel="noopener">Política de privacidad</a>';
+
+/**
+ * Pantallas de acceso:
+ * - welcome: empezar sin cuenta o iniciar sesión.
+ * - login / register: con cuenta.
+ * - upgrade: crear cuenta a partir de lo que ya tienes sin cuenta (se conserva todo).
+ */
+function renderAuth(mode = 'welcome') {
+  const guest = Boolean(state.user?.is_guest);
+  if (mode === 'register' && guest) mode = 'upgrade';
   const isLogin = mode === 'login';
+  const isWelcome = mode === 'welcome';
+  const isUpgrade = mode === 'upgrade';
+  const back = guest ? '<a class="auth-back" data-back>← Volver a mi horario</a>' : isWelcome ? '' : '<a class="auth-back" data-mode="welcome">← Volver</a>';
+  const titles = {
+    welcome: ['Organiza tu curso', 'Tu horario, tus tareas y tus exámenes en un solo sitio. Sin registrarte.'],
+    login: ['Hola de nuevo', 'Entra para ver tu horario en este dispositivo.'],
+    register: ['Crea tu cuenta', 'Así podrás ver tu horario en cualquier dispositivo.'],
+    upgrade: ['Crea tu cuenta', 'Se guardará todo lo que ya tienes y podrás verlo en cualquier dispositivo.'],
+  };
+  const [title, sub] = titles[mode];
+  const form = isWelcome ? `
+      <button class="btn btn-primary" type="button" id="start-guest">Empezar sin cuenta</button>
+      <p class="hint auth-note">Se guarda en este dispositivo. Cuando quieras, crea una cuenta para verlo también en otros.</p>
+      <div class="auth-divider"><span>¿Ya tienes cuenta?</span></div>
+      <button class="btn auth-secondary" type="button" data-mode="login">Iniciar sesión</button>
+      <p class="hint auth-terms">Al empezar aceptas ${TERMS_LINKS}.</p>` : `
+      ${isLogin && guest ? `<div class="status warn">${icon('alert')}<span>Si entras en una cuenta, lo que has hecho sin cuenta en este dispositivo se borrará. Para conservarlo, <a data-mode="upgrade">crea una cuenta con ello</a>.</span></div>` : ''}
+      ${isLogin ? '' : '<label class="field"><span>Nombre</span><input type="text" name="name" autocomplete="name" required></label>'}
+      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required></label>
+      <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required minlength="8">
+        ${isLogin ? '' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
+      ${isLogin ? '' : `<label class="check-line legal-accept"><input type="checkbox" name="accept_terms" required><span>He leído y acepto ${TERMS_LINKS}.</span></label>`}
+      <div class="error" id="auth-error"></div>
+      <button class="btn btn-primary" type="submit">${isLogin ? 'Entrar' : 'Crear cuenta'}</button>
+      <div class="switch">${isLogin ? `¿Aún no tienes cuenta? <a data-mode="${guest ? 'upgrade' : 'register'}">Créala</a>${guest ? '' : ' o <a data-mode="welcome">úsala sin cuenta</a>'}` : '¿Ya tienes cuenta? <a data-mode="login">Inicia sesión</a>'}</div>`;
   $('#app').innerHTML = `
     <div class="auth-wrap">
     <aside class="auth-brand">
@@ -280,29 +317,43 @@ function renderAuth(mode) {
       <ul>
         <li>${icon('grid')}<span>Tu horario semanal con aulas, profesorado y un color para cada asignatura.</span></li>
         <li>${icon('check')}<span>Tareas y exámenes con su lista de pasos para ir tachando.</span></li>
-        <li>${icon('mail')}<span>Un recordatorio en tu correo antes de cada entrega.</span></li>
+        <li>${icon('bell')}<span>Avisos antes de cada entrega, en el móvil o en tu correo.</span></li>
+        <li>${icon('user')}<span>Sin registrarte. Crea una cuenta solo si quieres verlo en varios dispositivos.</span></li>
       </ul>
     </aside>
     <div class="auth-side">
     <form class="auth" id="auth-form" novalidate>
+      ${back}
       ${brand()}
-      <h2>${isLogin ? 'Hola de nuevo' : 'Crea tu cuenta'}</h2>
-      <p class="sub">${isLogin ? 'Entra para ver tu semana.' : 'Solo necesitas un correo y una contraseña.'}</p>
-      ${isLogin ? '' : '<label class="field"><span>Nombre</span><input type="text" name="name" autocomplete="name" required></label>'}
-      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required></label>
-      <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required minlength="8">
-        ${isLogin ? '' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
-      ${isLogin ? '' : `<label class="check-line legal-accept"><input type="checkbox" name="accept_terms" required><span>He leído y acepto los <a href="/legal.html#terminos" target="_blank" rel="noopener">Términos de uso</a> y la <a href="/legal.html#privacidad" target="_blank" rel="noopener">Política de privacidad</a>.</span></label>`}
-      <div class="error" id="auth-error"></div>
-      <button class="btn btn-primary" type="submit">${isLogin ? 'Entrar' : 'Crear cuenta'}</button>
-      <div class="switch">${isLogin ? '¿Aún no tienes cuenta? <a data-mode="register">Regístrate</a>' : '¿Ya tienes cuenta? <a data-mode="login">Inicia sesión</a>'}</div>
-      <nav class="legal-links"><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">Aviso legal</a><a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a><a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a><a href="/legal.html#cookies" target="_blank" rel="noopener">Cookies</a><a href="/contacto.html" target="_blank" rel="noopener">Contacto</a></nav>
+      <h2>${title}</h2>
+      <p class="sub">${sub}</p>
+      ${form}
+      ${LEGAL_NAV}
     </form>
     </div>
     </div>`;
-  $('.switch a').onclick = (e) => renderAuth(e.target.dataset.mode);
-  if (!window.matchMedia('(pointer: coarse)').matches) $('#auth-form input').focus();
-  $('#auth-form').onsubmit = async (e) => {
+  const root = $('#auth-form');
+  root.addEventListener('click', (e) => {
+    const m = e.target.closest('[data-mode]');
+    if (m) { e.preventDefault(); return renderAuth(m.dataset.mode); }
+    if (e.target.closest('[data-back]')) { e.preventDefault(); start().catch(() => renderAuth('welcome')); }
+  });
+  if (isWelcome) {
+    $('#start-guest').onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await api('POST', '/auth/guest', { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        await start();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+      }
+    };
+    return;
+  }
+  if (!window.matchMedia('(pointer: coarse)').matches) $('#auth-form input')?.focus();
+  root.onsubmit = async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
     if (!isLogin) {
@@ -313,8 +364,10 @@ function renderAuth(mode) {
     btn.disabled = true;
     try {
       if (isLogin) await api('POST', '/auth/login', fd);
+      else if (isUpgrade) await api('POST', '/auth/upgrade', fd);
       else await api('POST', '/auth/register', { ...fd, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       await start();
+      if (isUpgrade) toast('¡Cuenta creada! Ya puedes entrar desde cualquier dispositivo.');
     } catch (err) {
       $('#auth-error').textContent = err.message;
       btn.disabled = false;
@@ -347,15 +400,16 @@ function renderShell() {
           ${avatarHtml(state.user)}<span class="name">${esc(state.user.name)}</span>${icon('down')}
         </button>
         <div class="user-menu" id="user-menu" role="menu" hidden>
-          <div class="um-head"><b class="um-name">${esc(state.user.name)}</b><small>${esc(state.user.email)}</small></div>
+          <div class="um-head"><b class="um-name">${esc(state.user.name)}</b><small>${state.user.is_guest ? 'Tus datos están en este dispositivo' : esc(state.user.email)}</small></div>
+          ${state.user.is_guest ? `<button role="menuitem" class="um-cta" data-auth="upgrade">${icon('user')}Crear cuenta</button><button role="menuitem" data-auth="login">${icon('logout')}Iniciar sesión</button><hr>` : ''}
           <button role="menuitem" data-view="account">${icon('user')}Mi cuenta</button>
           ${state.user.is_admin ? `<button role="menuitem" data-view="admin">${icon('shield')}Administración</button>` : ''}
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
-          <hr>
-          <button role="menuitem" id="logout" class="danger">${icon('logout')}Cerrar sesión</button>
+          ${state.user.is_guest ? '' : `<hr>
+          <button role="menuitem" id="logout" class="danger">${icon('logout')}Cerrar sesión</button>`}
         </div>
       </div>
     </header>
@@ -372,16 +426,19 @@ function renderShell() {
   };
   menuBtn.onclick = (e) => { e.stopPropagation(); setMenu(menu.hidden); };
   menu.onclick = (e) => {
+    const a = e.target.closest('[data-auth]');
+    if (a) { setMenu(false); return renderAuth(a.dataset.auth); }
     const b = e.target.closest('[data-view]');
     if (b) { location.hash = b.dataset.view; setMenu(false); }
   };
   document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.userbox')) setMenu(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { setMenu(false); menuBtn.focus(); } });
-  $('#logout').onclick = async () => {
+  const logoutBtn = $('#logout');
+  if (logoutBtn) logoutBtn.onclick = async () => {
     await forgetThisDevice();
     await api('POST', '/auth/logout').catch(() => {});
     state.user = null;
-    renderAuth('login');
+    renderAuth('welcome');
   };
   bindViewEvents($('#view'));
 }
@@ -1567,9 +1624,10 @@ function settingsView() {
       <div id="push-box" class="push-box"><span class="hint">Comprobando…</span></div>
 
       <h3 class="sub-title">${icon('mail')}Correo</h3>
+${state.user.is_guest ? `<div class="status info">${icon('mail')}<span>Los avisos por correo necesitan una cuenta, para saber a qué dirección enviarlos. <a href="#" data-auth-link="upgrade">Crear cuenta</a></span></div>` : `
       ${state.mailConfigured ? '' : `<div class="status warn">${icon('alert')}<span>El servidor todavía no tiene configurado el envío de correo (SMTP). Los avisos se registrarán en la consola del servidor hasta que se configure.</span></div>`}
       <label class="check-line"><input type="checkbox" id="s-notify" ${u.email_notifications ? 'checked' : ''}><span>Enviar los avisos también a <b>${esc(u.email)}</b></span></label>
-      <button class="btn btn-sm" id="test-email">${icon('mail')}Enviar correo de prueba</button>
+      <button class="btn btn-sm" id="test-email">${icon('mail')}Enviar correo de prueba</button>`}
 
       <h3 class="sub-title">${icon('clock')}Cuándo avisar</h3>
       <label class="field"><span>Aviso por defecto para nuevas tareas y exámenes</span>
@@ -1660,13 +1718,16 @@ function bindSettings(root) {
   };
   const ttSel = $('#s-tt', root);
   if (ttSel) ttSel.onchange = async () => { if (await savePending()) setActiveTimetable(Number(ttSel.value)); };
-  $('#s-notify', root).onchange = (e) => saveSettings({ email_notifications: e.target.checked });
+  const notify = $('#s-notify', root);
+  if (notify) notify.onchange = (e) => saveSettings({ email_notifications: e.target.checked });
+  root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
   $('#s-default-rem', root).onchange = (e) => saveSettings({ default_reminder_minutes: e.target.value === '' ? null : Number(e.target.value) });
   $('#s-digest', root).onchange = (e) => saveSettings({ daily_digest: e.target.checked });
   $('#s-digest-hour', root).onchange = (e) => saveSettings({ digest_hour: Number(e.target.value) });
   $('#s-tz', root).onchange = async (e) => { if (!(await saveSettings({ timezone: e.target.value.trim() }))) e.target.value = state.user.timezone; };
   renderPushBox();
-  $('#test-email', root).onclick = async (e) => {
+  const testBtn = $('#test-email', root);
+  if (testBtn) testBtn.onclick = async (e) => {
     e.target.disabled = true;
     const r = await attempt(() => api('POST', '/me/test-email'));
     e.target.disabled = false;
@@ -1677,8 +1738,57 @@ function bindSettings(root) {
 /* ============================================================
    Mi cuenta
    ============================================================ */
+const LEGAL_LIST_CARD = () => `
+    <section class="card">
+      <h2>Ayuda y textos legales</h2>
+      <ul class="legal-list">
+        <li><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">${icon('doc')}Aviso legal</a></li>
+        <li><a href="/legal.html#privacidad" target="_blank" rel="noopener">${icon('shield')}Política de privacidad</a></li>
+        <li><a href="/legal.html#terminos" target="_blank" rel="noopener">${icon('doc')}Términos de uso</a></li>
+        <li><a href="/legal.html#cookies" target="_blank" rel="noopener">${icon('doc')}Política de cookies</a></li>
+        <li><a href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a></li>
+      </ul>
+    </section>`;
+
+function guestAccountView() {
+  return `<div class="scroll"><div class="settings account">
+    <section class="card account-head guest-head">
+      ${avatarHtml(state.user, 'big')}
+      <div class="head-info">
+        <h2>Estás usando Kairos sin cuenta</h2>
+        <p class="hint" style="margin:4px 0 0">Tu horario, tareas y eventos se guardan y están asociados a este dispositivo. Crea una cuenta gratis si quieres verlos también en el móvil, la tablet o el ordenador, y recibir avisos por correo. No perderás nada de lo que ya tienes.</p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Crear una cuenta</h2>
+      <ul class="guest-perks">
+        <li>${icon('check')}Tu horario en todos tus dispositivos</li>
+        <li>${icon('check')}Avisos de tareas y exámenes por correo</li>
+        <li>${icon('check')}No pierdes tus datos si borras el navegador o cambias de móvil</li>
+      </ul>
+      <div class="guest-actions">
+        <button class="btn btn-primary" data-auth-link="upgrade">${icon('user')}Crear cuenta</button>
+        <button class="btn" data-auth-link="login">Ya tengo cuenta: iniciar sesión</button>
+      </div>
+      <p class="hint" style="margin:10px 0 0">Si inicias sesión con una cuenta que ya tienes, se abrirán los datos de esa cuenta y los de este dispositivo se borrarán.</p>
+    </section>
+    <section class="card">
+      <h2>Tus datos</h2>
+      <p class="hint">Descarga una copia de todo lo que Kairos guarda en este dispositivo: horarios, asignaturas, tareas, exámenes y eventos.</p>
+      <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
+    </section>
+    ${LEGAL_LIST_CARD()}
+    <section class="card danger-zone">
+      <h2>Borrar todos mis datos</h2>
+      <p class="hint">Se borrarán para siempre tus horarios, asignaturas, tareas, exámenes y eventos de este dispositivo y empezarás de cero. No se puede deshacer.</p>
+      <button class="btn btn-danger" id="delete-account">${icon('trash')}Borrar todos mis datos</button>
+    </section>
+  </div></div>`;
+}
+
 function accountView() {
   const u = state.user;
+  if (u.is_guest) return guestAccountView();
   return `<div class="scroll"><div class="settings account">
     <section class="card account-head">
       <div class="photo-pick">
@@ -1732,16 +1842,7 @@ function accountView() {
       <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
     </section>
 
-    <section class="card">
-      <h2>Ayuda y textos legales</h2>
-      <ul class="legal-list">
-        <li><a href="/legal.html#aviso-legal" target="_blank" rel="noopener">${icon('doc')}Aviso legal</a></li>
-        <li><a href="/legal.html#privacidad" target="_blank" rel="noopener">${icon('shield')}Política de privacidad</a></li>
-        <li><a href="/legal.html#terminos" target="_blank" rel="noopener">${icon('doc')}Términos de uso</a></li>
-        <li><a href="/legal.html#cookies" target="_blank" rel="noopener">${icon('doc')}Política de cookies</a></li>
-        <li><a href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a></li>
-      </ul>
-    </section>
+    ${LEGAL_LIST_CARD()}
 
     <section class="card danger-zone">
       <h2>Eliminar cuenta</h2>
@@ -1757,7 +1858,7 @@ function refreshUserBox() {
   $('.userbox .name').textContent = state.user.name;
   $('.userbox .avatar').outerHTML = avatarHtml(state.user);
   $('.um-name').textContent = state.user.name;
-  $('.um-head small').textContent = state.user.email;
+  $('.um-head small').textContent = state.user.is_guest ? 'Tus datos están en este dispositivo' : state.user.email;
 }
 
 /** Recorta la foto en cuadrado (centrada), la reduce a 320 px y la convierte a JPEG para que pese poco. */
@@ -1788,6 +1889,10 @@ async function photoToDataUrl(file) {
 }
 
 function bindAccount(root) {
+  root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
+  $('#export-data', root).onclick = exportMyData;
+  $('#delete-account', root).onclick = () => openDeleteAccountModal();
+  if (state.user.is_guest) return;
   $('#avatar-file', root).onchange = async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
@@ -1826,50 +1931,51 @@ function bindAccount(root) {
     const fd = Object.fromEntries(new FormData(e.target));
     if ((await attempt(() => api('PUT', '/me/password', fd), 'Contraseña actualizada')) !== undefined) e.target.reset();
   };
-  $('#export-data', root).onclick = async (e) => {
-    const b = e.currentTarget;
-    b.disabled = true;
-    const data = await attempt(() => api('GET', '/me/export'));
-    b.disabled = false;
-    if (!data) return;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kairos-mis-datos-${dateKey(new Date())}.json`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    toast('Datos descargados');
-  };
   $('#account-logout', root).onclick = () => $('#logout').click();
-  $('#delete-account', root).onclick = () => openDeleteAccountModal();
+}
+
+async function exportMyData(e) {
+  const b = e.currentTarget;
+  b.disabled = true;
+  const data = await attempt(() => api('GET', '/me/export'));
+  b.disabled = false;
+  if (!data) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `kairos-mis-datos-${dateKey(new Date())}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Datos descargados');
 }
 
 function openDeleteAccountModal() {
+  const guest = state.user.is_guest;
   openModal(`
     <form id="del-form" novalidate>
-      <div class="modal-head"><h2>Eliminar tu cuenta</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
-      <div class="status warn">${icon('alert')}<span>Se borrarán para siempre tu cuenta y todos tus datos. Si quieres conservarlos, descárgalos antes desde «Tus datos».</span></div>
-      <label class="field"><span>Escribe tu contraseña para confirmar</span><input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="modal-head"><h2>${guest ? 'Borrar todos tus datos' : 'Eliminar tu cuenta'}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+      <div class="status warn">${icon('alert')}<span>${guest ? 'Se borrarán para siempre tus horarios, asignaturas, tareas, exámenes y eventos.' : 'Se borrarán para siempre tu cuenta y todos tus datos.'} Si quieres conservarlos, descárgalos antes desde «Tus datos».</span></div>
+      ${guest ? '' : '<label class="field"><span>Escribe tu contraseña para confirmar</span><input type="password" name="password" autocomplete="current-password" required></label>'}
       <div class="error" id="form-error"></div>
       <div class="modal-foot">
         <button type="button" class="btn" data-close>Cancelar</button>
-        <button class="btn btn-danger-solid">${icon('trash')}Eliminar definitivamente</button>
+        <button class="btn btn-danger-solid">${icon('trash')}${guest ? 'Borrar definitivamente' : 'Eliminar definitivamente'}</button>
       </div>
     </form>`, (root) => {
     const form = $('#del-form', root);
     form.onsubmit = async (e) => {
       e.preventDefault();
-      if (!form.password.value) { $('#form-error', form).textContent = 'Escribe tu contraseña'; return; }
+      if (!guest && !form.password.value) { $('#form-error', form).textContent = 'Escribe tu contraseña'; return; }
       try {
         await forgetThisDevice();
-        await api('DELETE', '/me', { password: form.password.value });
+        await api('DELETE', '/me', guest ? {} : { password: form.password.value });
         closeModal();
         state.user = null;
         location.hash = '';
-        renderAuth('login');
-        toast('Tu cuenta se ha eliminado');
+        renderAuth('welcome');
+        toast(guest ? 'Tus datos se han borrado' : 'Tu cuenta se ha eliminado');
       } catch (err) {
         $('#form-error', form).textContent = err.message;
       }
@@ -1968,7 +2074,8 @@ async function adminSummary() {
   const ok = (on, yes, no) => `<span class="sys ${on ? 'ok' : 'off'}">${icon(on ? 'check' : 'alert')}${on ? yes : no}</span>`;
   return `
     <section class="stats">
-      ${statTile(s.users.total, 'Usuarios', `${s.users.admins} en administración`)}
+      ${statTile(s.users.total, 'Con cuenta', `${s.users.admins} en administración`)}
+      ${statTile(s.users.guests ?? 0, 'Sin cuenta', `${s.users.guests_active7 ?? 0} activos en 7 días`)}
       ${statTile(s.users.new7, 'Altas · 7 días', `${s.users.new30} en 30 días`)}
       ${statTile(s.users.active7, 'Activos · 7 días', `${s.users.active30} en 30 días`)}
       ${statTile(s.messages_open, 'Mensajes sin atender')}
@@ -1998,15 +2105,16 @@ async function adminSummary() {
 
 /* ---------- Usuarios ---------- */
 function adminAvatar(u) {
+  if (u.is_guest) return avatarHtml(u);
   return u.avatar_url ? `<span class="avatar has-photo"><img src="${esc(u.avatar_url)}" alt="" loading="lazy"></span>` : `<span class="avatar">${esc(initials(u.name))}</span>`;
 }
 function userBadges(u) {
-  return `${u.role !== 'user' ? `<span class="badge-role ${u.role}">${ROLE_LABEL[u.role]}</span>` : ''}${u.suspended_at ? '<span class="badge-role suspended">Suspendida</span>' : ''}`;
+  return `${u.is_guest ? '<span class="badge-role guest">Sin cuenta</span>' : ''}${u.role !== 'user' ? `<span class="badge-role ${u.role}">${ROLE_LABEL[u.role]}</span>` : ''}${u.suspended_at ? '<span class="badge-role suspended">Suspendida</span>' : ''}`;
 }
 
 async function adminUsers() {
   const list = await api('GET', `/admin/users?q=${encodeURIComponent(admin.q)}&filter=${admin.filter}`);
-  const filters = [['all', 'Todos'], ['active', 'Activos'], ['admins', 'Admins'], ['suspended', 'Suspendidos']];
+  const filters = [['all', 'Todos'], ['accounts', 'Con cuenta'], ['guests', 'Sin cuenta'], ['active', 'Activos'], ['admins', 'Admins'], ['suspended', 'Suspendidos']];
   return `
     <div class="admin-tools">
       <input type="search" id="admin-q" placeholder="Buscar por nombre o correo" value="${esc(admin.q)}" aria-label="Buscar usuarios">
@@ -2017,7 +2125,7 @@ async function adminUsers() {
       ${list.map((u) => `
         <button type="button" class="user-row" data-user="${u.id}">
           ${adminAvatar(u)}
-          <span class="who"><b>${esc(u.name)}</b>${userBadges(u)}<small>${esc(u.email)}</small></span>
+          <span class="who"><b>${esc(u.name)}</b>${userBadges(u)}<small>${u.is_guest ? `Usuario #${u.id} · solo en su dispositivo` : esc(u.email)}</small></span>
           <span class="meta"><small>Alta ${esc(fmtDay(u.created_at))}</small><small>Activo ${esc(ago(u.last_seen_at))}</small></span>
           ${icon('right')}
         </button>`).join('') || '<div class="empty"><strong>Sin resultados</strong>Prueba con otra búsqueda.</div>'}
@@ -2033,12 +2141,12 @@ async function openAdminUser(id) {
   const canAct = !self && !protectedUser;
   const row = (label, value) => `<div class="kv"><span>${label}</span><b>${value}</b></div>`;
   openModal(`
-    <div class="modal-head"><div class="head-text admin-user-head">${adminAvatar(u)}<div><h2>${esc(u.name)}</h2><small class="hint">${esc(u.email)}</small></div></div><button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <div class="modal-head"><div class="head-text admin-user-head">${adminAvatar(u)}<div><h2>${esc(u.name)}</h2><small class="hint">${u.is_guest ? `Usuario #${u.id} · usa Kairos sin cuenta` : esc(u.email)}</small></div></div><button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
     <div class="badges-line">${userBadges(u) || '<span class="badge-role user">Usuario</span>'}</div>
     <div class="kv-list">
       ${row('Alta', esc(fmtWhen(u.created_at)))}
       ${row('Última actividad', esc(u.last_seen_at ? `${fmtWhen(u.last_seen_at)} (${ago(u.last_seen_at)})` : 'Nunca'))}
-      ${row('Términos aceptados', esc(u.accepted_terms_at ? fmtDay(u.accepted_terms_at) : 'Antes de existir la casilla'))}
+      ${u.is_guest ? '' : row('Términos aceptados', esc(u.accepted_terms_at ? fmtDay(u.accepted_terms_at) : 'Antes de existir la casilla'))}
       ${row('Zona horaria', esc(u.timezone))}
       ${row('Horarios · asignaturas', `${u.timetables} · ${u.subjects}`)}
       ${row('Tareas · exámenes · eventos', `${u.tasks} · ${u.exams} · ${u.events}`)}
@@ -2049,7 +2157,7 @@ async function openAdminUser(id) {
     <p class="hint" style="margin:10px 0 0">Por privacidad, desde aquí no se ve el contenido de sus horarios, tareas ni notas.</p>
     ${self ? '<p class="hint">Esta es tu cuenta. Gestiónala desde «Mi cuenta».</p>' : protectedUser ? `<div class="status info" style="margin-top:12px">${icon('shield')}<span>${u.role === 'superadmin' ? 'La cuenta de la superadministradora está protegida.' : 'Solo la superadministradora puede gestionar a otros administradores.'}</span></div>` : ''}
     ${canAct ? `<div class="admin-actions">
-      ${me.is_superadmin ? (u.role === 'admin'
+      ${me.is_superadmin && !u.is_guest ? (u.role === 'admin'
         ? `<button class="btn" data-act="role" data-role="user">${icon('shield')}Quitar administración</button>`
         : `<button class="btn" data-act="role" data-role="admin" ${u.suspended_at ? 'disabled title="Reactiva antes la cuenta"' : ''}>${icon('shield')}Hacer administrador</button>`) : ''}
       <button class="btn" data-act="logout" ${u.sessions ? '' : 'disabled'}>${icon('logout')}Cerrar sus sesiones</button>
@@ -2678,7 +2786,7 @@ document.fonts?.ready.then(() => { if (state.view === 'week') fitTimetable(); })
   try {
     await start();
   } catch {
-    renderAuth('login');
+    renderAuth('welcome');
   }
   // Actualiza la vista (hora actual, vencidas…) cada minuto.
   setInterval(() => { if (state.user && !$('#modal-root').innerHTML && state.view !== 'settings' && state.view !== 'admin') renderView(); }, 60000);

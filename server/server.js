@@ -16,6 +16,9 @@ const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, '..', 'public');
 const PROD = process.env.NODE_ENV === 'production';
 const SESSION_DAYS = 90;
+const GUEST_SESSION_DAYS = 5 * 365; // sin cuenta, la sesión es lo único que une el dispositivo con sus datos
+const GUEST_DOMAIN = 'invitado.kairos'; // correo interno de las cuentas sin registrar (nunca se muestra ni se usa para enviar)
+const GUEST_MAX_IDLE_DAYS = 365;
 const COOKIE = 'kairos_session';
 const TERMS_VERSION = '2026-10-11';
 // Superadministradora: la única que puede nombrar o quitar administradores. Se puede cambiar con la variable SUPERADMIN_EMAIL.
@@ -86,7 +89,7 @@ function checkPassword(pw, stored) {
 const fmtUser = (u, tt) => ({
   id: u.id,
   name: u.name,
-  email: u.email,
+  email: u.is_guest ? '' : u.email,
   timezone: u.timezone,
   active_timetable_id: u.active_timetable_id,
   email_notifications: Boolean(u.email_notifications),
@@ -96,6 +99,7 @@ const fmtUser = (u, tt) => ({
   visible_days: tt ? JSON.parse(tt.visible_days) : [1, 2, 3, 4, 5],
   tt_background: tt ? tt.background : 'rayas',
   // La foto se sirve aparte (no se manda en cada carga); el número cambia cada vez que se actualiza.
+  is_guest: Boolean(u.is_guest),
   role: u.role || 'user',
   is_admin: u.role === 'admin' || u.role === 'superadmin',
   is_superadmin: u.role === 'superadmin',
@@ -132,7 +136,7 @@ const DEFAULT_SLOTS = [
 async function main() {
   const db = await openDb();
   // Columnas añadidas después de la primera versión (si ya existen, se ignora el error).
-  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT', "role TEXT NOT NULL DEFAULT 'user'", 'suspended_at TEXT', 'last_seen_at TEXT']) {
+  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT', "role TEXT NOT NULL DEFAULT 'user'", 'suspended_at TEXT', 'last_seen_at TEXT', 'is_guest INTEGER NOT NULL DEFAULT 0']) {
     await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
   }
   await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
@@ -222,11 +226,16 @@ async function main() {
     const secure = PROD || process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
     res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
   }
-  async function startSession(res, uid) {
+  async function startSession(res, uid, days = SESSION_DAYS) {
     const token = crypto.randomBytes(32).toString('base64url');
-    const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+    const expires = new Date(Date.now() + days * 86400000).toISOString();
     await db.run('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [sha256(token), uid, expires]);
-    setCookie(res, token, SESSION_DAYS * 86400);
+    setCookie(res, token, days * 86400);
+  }
+  /** Usuario de la sesión actual aunque la petición no la exija (para saber si era un invitado). */
+  async function currentUser(req) {
+    const uid = await sessionUser(req);
+    return uid ? getUser(uid) : null;
   }
   async function sessionUser(req) {
     const token = parseCookies(req)[COOKIE];
@@ -285,12 +294,58 @@ async function main() {
     return { user: await userOut(uid) };
   }, { auth: false });
 
+  /** Empezar sin cuenta: se crea un usuario invitado unido a este dispositivo por la cookie de sesión. */
+  const guestHits = new Map();
+  route('POST', '/auth/guest', async ({ req, res, body }) => {
+    const existing = await currentUser(req);
+    if (existing) return { user: await userOut(existing.id) };
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const now = Date.now();
+    const hits = (guestHits.get(ip) || []).filter((t) => now - t < 60 * 60000);
+    if (hits.length >= 20) throw new HttpError(429, 'Demasiados intentos. Espera un rato y vuelve a probar.');
+    hits.push(now);
+    guestHits.set(ip, hits);
+    const tz = validTimezone(body.timezone) ? body.timezone : 'Europe/Madrid';
+    const uid = await db.tx(async (q) => {
+      const u = await q.run(`INSERT INTO users (email, name, password_hash, timezone, created_at, accepted_terms_at, terms_version, role, is_guest, email_notifications)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'user', 1, 0) RETURNING id`,
+      [`${crypto.randomUUID()}@${GUEST_DOMAIN}`, 'Sin cuenta', `guest$${crypto.randomBytes(16).toString('hex')}`, tz, nowIso(), nowIso(), TERMS_VERSION]);
+      const ttId = await createTimetable(q, u.id, { name: 'Mi horario', start_date: null, end_date: null, visible_days: [1, 2, 3, 4, 5] });
+      await q.run('UPDATE users SET active_timetable_id = ? WHERE id = ?', [ttId, u.id]);
+      return u.id;
+    });
+    await startSession(res, uid, GUEST_SESSION_DAYS);
+    return { user: await userOut(uid) };
+  }, { auth: false });
+
+  /** Crear cuenta a partir de lo que ya tenías sin cuenta: se conservan todos los datos. */
+  route('POST', '/auth/upgrade', async ({ uid, body, res }) => {
+    const u = await getUser(uid);
+    if (!u.is_guest) throw bad('Ya tienes una cuenta');
+    const name = str(body.name, 80);
+    const email = str(body.email, 200).toLowerCase();
+    const password = String(body.password || '');
+    if (!name) throw bad('Escribe tu nombre');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith(`@${GUEST_DOMAIN}`)) throw bad('Escribe un correo electrónico válido');
+    if (password.length < 8) throw bad('La contraseña debe tener al menos 8 caracteres');
+    if (body.accept_terms !== true) throw bad('Para crear la cuenta tienes que aceptar los Términos de uso y la Política de privacidad');
+    if (await db.get('SELECT id FROM users WHERE email = ?', [email])) throw new HttpError(409, 'Ya existe una cuenta con ese correo. Si es tuya, inicia sesión (lo que tienes sin cuenta en este dispositivo no se puede unir a ella).');
+    await db.run(`UPDATE users SET name = ?, email = ?, password_hash = ?, is_guest = 0, email_notifications = 1, accepted_terms_at = ?, terms_version = ?, role = ? WHERE id = ?`,
+      [name, email, hashPassword(password), nowIso(), TERMS_VERSION, email === SUPERADMIN_EMAIL ? 'superadmin' : 'user', uid]);
+    // Sesión nueva con la duración normal de una cuenta.
+    await db.run('DELETE FROM sessions WHERE user_id = ?', [uid]);
+    await startSession(res, uid);
+    return { user: await userOut(uid) };
+  });
+
   route('POST', '/auth/login', async ({ body, req, res }) => {
     rateLimit(req);
     const email = str(body.email, 200).toLowerCase();
     const u = await db.get('SELECT * FROM users WHERE email = ?', [email]);
     if (!u || !checkPassword(String(body.password || ''), u.password_hash)) throw new HttpError(401, 'Correo o contraseña incorrectos');
     if (u.suspended_at) throw new HttpError(403, 'Tu cuenta está suspendida. Si crees que es un error, escríbenos desde el formulario de contacto.');
+    const prev = await currentUser(req);
+    if (prev?.is_guest) await deleteUserData(prev.id);
     await startSession(res, u.id);
     return { user: await userOut(u.id) };
   }, { auth: false });
@@ -315,7 +370,10 @@ async function main() {
     const set = (col, v) => { sets.push(`${col} = ?`); vals.push(v); };
     if ('name' in body) { const n = str(body.name, 80); if (!n) throw bad('El nombre no puede estar vacío'); set('name', n); }
     if ('timezone' in body) { if (!validTimezone(body.timezone)) throw bad('Zona horaria no válida'); set('timezone', body.timezone); }
-    if ('email_notifications' in body) set('email_notifications', bool(body.email_notifications));
+    if ('email_notifications' in body) {
+      if (body.email_notifications && (await getUser(uid)).is_guest) throw bad('Crea una cuenta para recibir avisos por correo');
+      set('email_notifications', bool(body.email_notifications));
+    }
     if ('default_reminder_minutes' in body) set('default_reminder_minutes', reminderValue(body.default_reminder_minutes));
     if ('daily_digest' in body) set('daily_digest', bool(body.daily_digest));
     if ('digest_hour' in body) {
@@ -330,6 +388,7 @@ async function main() {
 
   route('PUT', '/me/password', async ({ uid, body }) => {
     const u = await getUser(uid);
+    if (u.is_guest) throw bad('Para esto necesitas crear una cuenta.');
     if (!checkPassword(String(body.current || ''), u.password_hash)) throw bad('La contraseña actual no es correcta');
     if (String(body.password || '').length < 8) throw bad('La nueva contraseña debe tener al menos 8 caracteres');
     await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [hashPassword(String(body.password)), uid]);
@@ -338,6 +397,7 @@ async function main() {
 
   route('PUT', '/me/email', async ({ uid, body }) => {
     const u = await getUser(uid);
+    if (u.is_guest) throw bad('Para esto necesitas crear una cuenta.');
     if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
     if (u.role === 'superadmin') throw bad('El correo de la superadministradora está fijado en la configuración del servidor y no se puede cambiar desde aquí.');
     const email = str(body.email, 200).toLowerCase();
@@ -377,7 +437,7 @@ async function main() {
   }
   async function logAdmin(admin, action, target, detail = '') {
     await db.run('INSERT INTO admin_log (admin_id, admin_name, action, target_user_id, target_label, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [admin.id, admin.name, action, target?.id ?? null, target ? `${target.name} <${target.email}>` : '', detail, nowIso()]);
+      [admin.id, admin.name, action, target?.id ?? null, target ? (target.is_guest ? `Sin cuenta (#${target.id})` : `${target.name} <${target.email}>`) : '', detail, nowIso()]);
   }
   /** Comprueba que el admin puede actuar sobre esa cuenta: nunca sobre sí mismo ni sobre la superadmin; sobre otros admins, solo la superadmin. */
   async function targetUser(admin, id) {
@@ -391,7 +451,7 @@ async function main() {
   const qs = (req) => new URL(req.url, 'http://x').searchParams;
   const count = async (sql, params = []) => Number((await db.get(sql, params))?.n || 0);
   const adminUserRow = (u, c = {}) => ({
-    id: u.id, name: u.name, email: u.email, role: u.role || 'user',
+    id: u.id, name: u.is_guest ? 'Sin cuenta' : u.name, email: u.is_guest ? '' : u.email, is_guest: Boolean(u.is_guest), role: u.role || 'user',
     created_at: u.created_at, last_seen_at: u.last_seen_at || null, suspended_at: u.suspended_at || null,
     avatar_url: u.avatar_updated ? `/api/admin/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar_updated)}` : null,
     timetables: Number(c.timetables || 0), tasks: Number(c.tasks || 0), exams: Number(c.exams || 0), events: Number(c.events || 0),
@@ -408,10 +468,12 @@ async function main() {
     for (const r of signups) { const k = fmt.format(new Date(r.created_at)); if (k in perDay) perDay[k]++; }
     return {
       users: {
-        total: await count('SELECT COUNT(*) AS n FROM users'),
+        total: await count('SELECT COUNT(*) AS n FROM users WHERE is_guest = 0'),
+        guests: await count('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1'),
         admins: await count("SELECT COUNT(*) AS n FROM users WHERE role IN ('admin', 'superadmin')"),
         suspended: await count('SELECT COUNT(*) AS n FROM users WHERE suspended_at IS NOT NULL'),
         new7: await count('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?', [ago(7)]),
+        guests_active7: await count('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1 AND last_seen_at >= ?', [ago(7)]),
         new30: signups.length,
         active7: await count('SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= ?', [ago(7)]),
         active30: await count('SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= ?', [ago(30)]),
@@ -449,14 +511,16 @@ async function main() {
     if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push(`%${q}%`, `%${q}%`); }
     if (filter === 'admins') where.push("u.role IN ('admin', 'superadmin')");
     if (filter === 'suspended') where.push('u.suspended_at IS NOT NULL');
+    if (filter === 'accounts') where.push('u.is_guest = 0');
+    if (filter === 'guests') where.push('u.is_guest = 1');
     if (filter === 'active') where.push('u.last_seen_at >= ?'), params.push(new Date(Date.now() - 7 * 86400000).toISOString());
-    const sql = `SELECT u.id, u.name, u.email, u.role, u.created_at, u.last_seen_at, u.suspended_at, u.avatar_updated,
+    const sql = `SELECT u.id, u.name, u.email, u.role, u.is_guest, u.created_at, u.last_seen_at, u.suspended_at, u.avatar_updated,
         (SELECT COUNT(*) FROM timetables t WHERE t.user_id = u.id) AS timetables,
         (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'task') AS tasks,
         (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'exam') AS exams,
         (SELECT COUNT(*) FROM events e WHERE e.user_id = u.id) AS events
       FROM users u ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY CASE u.role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300`;
+      ORDER BY CASE u.role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.is_guest, u.created_at DESC LIMIT 300`;
     const rows = await db.all(sql, params);
     return rows.map((r) => adminUserRow(r, r));
   });
@@ -495,6 +559,7 @@ async function main() {
     const admin = await requireSuper(uid);
     const t = await targetUser(admin, params.id);
     const role = body.role === 'admin' ? 'admin' : 'user';
+    if (t.is_guest && role === 'admin') throw bad('Una persona sin cuenta no puede ser administradora');
     if (t.suspended_at && role === 'admin') throw bad('Reactiva la cuenta antes de hacerla administradora');
     await db.run('UPDATE users SET role = ? WHERE id = ?', [role, t.id]);
     await logAdmin(admin, role === 'admin' ? 'Nombrar administrador' : 'Quitar administrador', t);
@@ -607,7 +672,7 @@ async function main() {
       exported_at: nowIso(),
       app: 'Kairos',
       account: {
-        name: u.name, email: u.email, timezone: u.timezone, created_at: u.created_at,
+        name: u.name, email: u.is_guest ? null : u.email, without_account: Boolean(u.is_guest), timezone: u.timezone, created_at: u.created_at,
         accepted_terms_at: u.accepted_terms_at || null, terms_version: u.terms_version || null,
         profile_photo: u.avatar_data || null,
         email_notifications: Boolean(u.email_notifications), default_reminder_minutes: u.default_reminder_minutes ?? null,
@@ -626,7 +691,7 @@ async function main() {
   /** Derecho de supresión: borra la cuenta y todos sus datos. */
   route('DELETE', '/me', async ({ uid, body, res }) => {
     const u = await getUser(uid);
-    if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
+    if (!u.is_guest && !checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
     if (u.role === 'superadmin') throw bad('La cuenta de la superadministradora no se puede eliminar desde la app.');
     await deleteUserData(uid);
     setCookie(res, '', 0);
@@ -675,6 +740,7 @@ async function main() {
 
   route('POST', '/me/test-email', async ({ uid, req }) => {
     const u = await getUser(uid);
+    if (u.is_guest) throw bad('Para esto necesitas crear una cuenta.');
     await notify.sendMail({
       to: u.email,
       subject: 'Correo de prueba de Kairos',
@@ -1091,6 +1157,15 @@ async function main() {
   server.listen(PORT, () => console.log(`Kairos en http://localhost:${PORT} (${db.kind})`));
 
   startReminders(db, () => appUrl(null));
+  // Las personas que usan Kairos sin cuenta y llevan un año sin entrar se borran (se avisa en la política de privacidad).
+  const cleanGuests = async () => {
+    const limit = new Date(Date.now() - GUEST_MAX_IDLE_DAYS * 86400000).toISOString();
+    const old = await db.all('SELECT id FROM users WHERE is_guest = 1 AND COALESCE(last_seen_at, created_at) < ?', [limit]);
+    for (const g of old) await deleteUserData(g.id).catch(() => {});
+    if (old.length) console.log(`[limpieza] ${old.length} usuarios sin cuenta inactivos borrados`);
+  };
+  setTimeout(() => cleanGuests().catch(() => {}), 60000);
+  setInterval(() => cleanGuests().catch(() => {}), 86400000).unref();
   // Limpieza de sesiones caducadas una vez al día.
   setInterval(() => db.run('DELETE FROM sessions WHERE expires_at < ?', [nowIso()]).catch(() => {}), 86400000).unref();
 }

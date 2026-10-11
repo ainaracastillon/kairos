@@ -28,7 +28,7 @@ function relativeLabel(iso) {
 
 async function deliver(db, user, { subject, title, lines, push, url }, appUrl) {
   const jobs = [];
-  if (user.email_notifications) {
+  if (user.email_notifications && !user.is_guest) {
     jobs.push(notify.sendMail({
       to: user.email,
       subject,
