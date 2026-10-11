@@ -121,6 +121,16 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   emailed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS admin_log (
+  id {PK},
+  admin_id INTEGER,
+  admin_name TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  target_user_id INTEGER,
+  target_label TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

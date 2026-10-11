@@ -334,6 +334,7 @@ const VIEWS = [
   ['subjects', 'book', 'Asignaturas', 'Materias'],
   ['settings', 'sliders', 'Ajustes', 'Ajustes'],
   ['account', 'user', 'Mi cuenta', 'Cuenta'],
+  ['admin', 'shield', 'Administración', 'Admin'],
 ];
 
 function renderShell() {
@@ -348,6 +349,7 @@ function renderShell() {
         <div class="user-menu" id="user-menu" role="menu" hidden>
           <div class="um-head"><b class="um-name">${esc(state.user.name)}</b><small>${esc(state.user.email)}</small></div>
           <button role="menuitem" data-view="account">${icon('user')}Mi cuenta</button>
+          ${state.user.is_admin ? `<button role="menuitem" data-view="admin">${icon('shield')}Administración</button>` : ''}
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
@@ -386,7 +388,8 @@ function renderShell() {
 
 function renderView() {
   if (!state.user || !$('#view')) return;
-  const view = VIEWS.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'month';
+  let view = VIEWS.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'month';
+  if (view === 'admin' && !state.user.is_admin) view = 'month';
   state.view = view;
   if (view !== 'week') state.ttSel = null;
   $$('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
@@ -395,9 +398,10 @@ function renderView() {
   const el = $('#view');
   const scrollEl = $('.scroll', el);
   const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
-  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, settings: settingsView, account: accountView }[view]();
+  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, settings: settingsView, account: accountView, admin: adminView }[view]();
   if (view === 'settings') bindSettings(el);
   if (view === 'account') bindAccount(el);
+  if (view === 'admin') bindAdmin(el);
   if (view === 'week') { fitTimetable(el); updateSelectBar(); }
   const newScroll = $('.scroll', el);
   if (newScroll && el.dataset.lastView === view) newScroll.scrollTop = scrollTop;
@@ -1874,6 +1878,294 @@ function openDeleteAccountModal() {
 }
 
 /* ============================================================
+   Panel de administración
+   ============================================================ */
+const admin = { tab: 'summary', q: '', filter: 'all', msgStatus: 'open' };
+const ADMIN_TABS = [['summary', 'Resumen'], ['users', 'Usuarios'], ['messages', 'Mensajes'], ['log', 'Actividad']];
+const ROLE_LABEL = { superadmin: 'Superadmin', admin: 'Admin', user: 'Usuario' };
+const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const fmtWhen = (iso) => (iso ? `${fmtDay(iso)} · ${timeOf(new Date(iso))}` : '—');
+const ago = (iso) => (iso ? relative(new Date(iso)) : 'nunca');
+
+function adminView() {
+  return `<div class="scroll"><div class="admin">
+    <div class="admin-head">
+      <h2>Administración</h2>
+      <span class="badge-role ${state.user.role}">${ROLE_LABEL[state.user.role]}</span>
+    </div>
+    <div class="segmented admin-tabs" id="admin-tabs" role="tablist">
+      ${ADMIN_TABS.map(([id, l]) => `<button role="tab" data-tab="${id}" class="${admin.tab === id ? 'active' : ''}" aria-selected="${admin.tab === id}">${l}<span class="tab-badge" data-badge="${id}" hidden></span></button>`).join('')}
+    </div>
+    <div id="admin-body" class="admin-body"><p class="hint admin-loading">Cargando…</p></div>
+  </div></div>`;
+}
+
+function bindAdmin(root) {
+  $('#admin-tabs', root).onclick = (e) => {
+    const b = e.target.closest('[data-tab]');
+    if (!b || b.dataset.tab === admin.tab) return;
+    admin.tab = b.dataset.tab;
+    $$('#admin-tabs [data-tab]', root).forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', String(x === b)); });
+    loadAdminTab();
+  };
+  loadAdminTab();
+}
+
+async function loadAdminTab() {
+  const body = $('#admin-body');
+  if (!body) return;
+  const tab = admin.tab;
+  body.innerHTML = '<p class="hint admin-loading">Cargando…</p>';
+  try {
+    const html = await { summary: adminSummary, users: adminUsers, messages: adminMessages, log: adminLog }[tab]();
+    if (admin.tab !== tab || !$('#admin-body')) return;
+    body.innerHTML = html;
+    bindAdminTab(body, tab);
+  } catch (err) {
+    body.innerHTML = `<div class="status warn">${icon('alert')}<span>${esc(err.message)}</span></div>`;
+  }
+}
+
+function setOpenMessagesBadge(n) {
+  const b = $('[data-badge="messages"]');
+  if (!b) return;
+  b.hidden = !n;
+  b.textContent = n > 99 ? '99+' : String(n);
+}
+
+/* ---------- Resumen ---------- */
+function statTile(value, label, sub = '') {
+  return `<div class="stat"><b>${esc(String(value))}</b><span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</div>`;
+}
+
+function signupChart(days) {
+  const max = Math.max(1, ...days.map((d) => d.n));
+  const W = 600, H = 150, pad = 24, gap = 2;
+  const bw = (W - gap * (days.length - 1)) / days.length;
+  const total = days.reduce((a, d) => a + d.n, 0);
+  const bars = days.map((d, i) => {
+    const h = d.n ? Math.max(4, ((H - pad) * d.n) / max) : 0;
+    const x = i * (bw + gap);
+    const label = `${new Date(`${d.date}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}: ${plural(d.n, 'alta', 'altas')}`;
+    return `<g class="bar"><title>${esc(label)}</title><rect class="hit" x="${x}" y="0" width="${bw + gap}" height="${H}"></rect>${h ? `<path d="M${x},${H} V${H - h + 4} q0,-4 4,-4 h${Math.max(0, bw - 8)} q4,0 4,4 V${H} Z"></path>` : ''}</g>`;
+  }).join('');
+  const first = new Date(`${days[0].date}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  return `<figure class="chart">
+    <figcaption><b>Altas de los últimos 30 días</b><span>${plural(total, 'cuenta nueva', 'cuentas nuevas')} · máximo ${max} en un día</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Altas por día en los últimos 30 días: ${total} en total">
+      <line class="base" x1="0" y1="${H - 0.5}" x2="${W}" y2="${H - 0.5}"></line>
+      <line class="grid" x1="0" y1="${pad}" x2="${W}" y2="${pad}"></line>${bars}
+    </svg>
+    <div class="chart-axis"><span>${esc(first)}</span><span>${max} / día</span><span>Hoy</span></div>
+  </figure>`;
+}
+
+async function adminSummary() {
+  const s = await api('GET', '/admin/stats');
+  setOpenMessagesBadge(s.messages_open);
+  const up = s.system.uptime_s;
+  const upTxt = up > 86400 ? `${Math.floor(up / 86400)} d` : up > 3600 ? `${Math.floor(up / 3600)} h` : `${Math.floor(up / 60)} min`;
+  const ok = (on, yes, no) => `<span class="sys ${on ? 'ok' : 'off'}">${icon(on ? 'check' : 'alert')}${on ? yes : no}</span>`;
+  return `
+    <section class="stats">
+      ${statTile(s.users.total, 'Usuarios', `${s.users.admins} en administración`)}
+      ${statTile(s.users.new7, 'Altas · 7 días', `${s.users.new30} en 30 días`)}
+      ${statTile(s.users.active7, 'Activos · 7 días', `${s.users.active30} en 30 días`)}
+      ${statTile(s.messages_open, 'Mensajes sin atender')}
+    </section>
+    <section class="card admin-card">${signupChart(s.signups_per_day)}</section>
+    <section class="card admin-card">
+      <h3>Uso</h3>
+      <div class="mini-stats">
+        ${statTile(s.content.timetables, 'Horarios')}${statTile(s.content.subjects, 'Asignaturas')}
+        ${statTile(s.content.tasks, 'Tareas')}${statTile(s.content.exams, 'Exámenes')}
+        ${statTile(s.content.events, 'Eventos')}${statTile(s.content.done, 'Completadas')}
+        ${statTile(s.users.email_on, 'Con avisos por correo')}${statTile(s.users.with_push, 'Con notificaciones')}
+        ${statTile(s.users.suspended, 'Cuentas suspendidas')}
+      </div>
+    </section>
+    <section class="card admin-card">
+      <h3>Sistema</h3>
+      <div class="sys-list">
+        ${ok(true, `Base de datos: ${s.system.database}`, '')}
+        ${ok(s.system.mail, `Correo: ${s.system.mail_provider}`, 'Correo sin configurar')}
+        ${ok(s.system.push, 'Notificaciones push activas', 'Notificaciones push no disponibles')}
+        <span class="sys">${icon('clock')}En marcha desde hace ${upTxt} · Node ${esc(s.system.node)}</span>
+      </div>
+      <button class="btn btn-sm" id="admin-test-email">${icon('mail')}Enviarme un correo de prueba</button>
+    </section>`;
+}
+
+/* ---------- Usuarios ---------- */
+function adminAvatar(u) {
+  return u.avatar_url ? `<span class="avatar has-photo"><img src="${esc(u.avatar_url)}" alt="" loading="lazy"></span>` : `<span class="avatar">${esc(initials(u.name))}</span>`;
+}
+function userBadges(u) {
+  return `${u.role !== 'user' ? `<span class="badge-role ${u.role}">${ROLE_LABEL[u.role]}</span>` : ''}${u.suspended_at ? '<span class="badge-role suspended">Suspendida</span>' : ''}`;
+}
+
+async function adminUsers() {
+  const list = await api('GET', `/admin/users?q=${encodeURIComponent(admin.q)}&filter=${admin.filter}`);
+  const filters = [['all', 'Todos'], ['active', 'Activos'], ['admins', 'Admins'], ['suspended', 'Suspendidos']];
+  return `
+    <div class="admin-tools">
+      <input type="search" id="admin-q" placeholder="Buscar por nombre o correo" value="${esc(admin.q)}" aria-label="Buscar usuarios">
+      <select id="admin-filter" aria-label="Filtrar">${filters.map(([v, l]) => `<option value="${v}" ${admin.filter === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </div>
+    <p class="hint">${plural(list.length, 'usuario', 'usuarios')}${list.length >= 300 ? ' (se muestran los 300 primeros)' : ''}</p>
+    <div class="user-list">
+      ${list.map((u) => `
+        <button type="button" class="user-row" data-user="${u.id}">
+          ${adminAvatar(u)}
+          <span class="who"><b>${esc(u.name)}</b>${userBadges(u)}<small>${esc(u.email)}</small></span>
+          <span class="meta"><small>Alta ${esc(fmtDay(u.created_at))}</small><small>Activo ${esc(ago(u.last_seen_at))}</small></span>
+          ${icon('right')}
+        </button>`).join('') || '<div class="empty"><strong>Sin resultados</strong>Prueba con otra búsqueda.</div>'}
+    </div>`;
+}
+
+async function openAdminUser(id) {
+  const u = await attempt(() => api('GET', `/admin/users/${id}`));
+  if (!u) return;
+  const me = state.user;
+  const self = u.id === me.id;
+  const protectedUser = u.role === 'superadmin' || (u.role === 'admin' && !me.is_superadmin);
+  const canAct = !self && !protectedUser;
+  const row = (label, value) => `<div class="kv"><span>${label}</span><b>${value}</b></div>`;
+  openModal(`
+    <div class="modal-head"><div class="head-text admin-user-head">${adminAvatar(u)}<div><h2>${esc(u.name)}</h2><small class="hint">${esc(u.email)}</small></div></div><button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <div class="badges-line">${userBadges(u) || '<span class="badge-role user">Usuario</span>'}</div>
+    <div class="kv-list">
+      ${row('Alta', esc(fmtWhen(u.created_at)))}
+      ${row('Última actividad', esc(u.last_seen_at ? `${fmtWhen(u.last_seen_at)} (${ago(u.last_seen_at)})` : 'Nunca'))}
+      ${row('Términos aceptados', esc(u.accepted_terms_at ? fmtDay(u.accepted_terms_at) : 'Antes de existir la casilla'))}
+      ${row('Zona horaria', esc(u.timezone))}
+      ${row('Horarios · asignaturas', `${u.timetables} · ${u.subjects}`)}
+      ${row('Tareas · exámenes · eventos', `${u.tasks} · ${u.exams} · ${u.events}`)}
+      ${row('Avisos', `${u.email_notifications ? 'Correo' : 'Sin correo'} · ${plural(u.push_devices, 'dispositivo', 'dispositivos')} con notificaciones`)}
+      ${row('Sesiones abiertas', String(u.sessions))}
+      ${row('Mensajes de contacto', String(u.messages))}
+    </div>
+    <p class="hint" style="margin:10px 0 0">Por privacidad, desde aquí no se ve el contenido de sus horarios, tareas ni notas.</p>
+    ${self ? '<p class="hint">Esta es tu cuenta. Gestiónala desde «Mi cuenta».</p>' : protectedUser ? `<div class="status info" style="margin-top:12px">${icon('shield')}<span>${u.role === 'superadmin' ? 'La cuenta de la superadministradora está protegida.' : 'Solo la superadministradora puede gestionar a otros administradores.'}</span></div>` : ''}
+    ${canAct ? `<div class="admin-actions">
+      ${me.is_superadmin ? (u.role === 'admin'
+        ? `<button class="btn" data-act="role" data-role="user">${icon('shield')}Quitar administración</button>`
+        : `<button class="btn" data-act="role" data-role="admin" ${u.suspended_at ? 'disabled title="Reactiva antes la cuenta"' : ''}>${icon('shield')}Hacer administrador</button>`) : ''}
+      <button class="btn" data-act="logout" ${u.sessions ? '' : 'disabled'}>${icon('logout')}Cerrar sus sesiones</button>
+      ${u.suspended_at
+        ? `<button class="btn" data-act="unsuspend">${icon('check')}Reactivar cuenta</button>`
+        : `<button class="btn btn-danger" data-act="suspend">${icon('alert')}Suspender cuenta</button>`}
+      <button class="btn btn-danger" data-act="delete">${icon('trash')}Eliminar cuenta</button>
+    </div>` : ''}`, (root) => {
+    root.onclick = async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const act = b.dataset.act;
+      let done;
+      if (act === 'role') {
+        const toAdmin = b.dataset.role === 'admin';
+        if (!confirm(toAdmin ? `¿Hacer administrador a ${u.name}? Podrá ver usuarios y mensajes, suspender y eliminar cuentas (no de otros administradores).` : `¿Quitar la administración a ${u.name}?`)) return;
+        done = await attempt(() => api('PUT', `/admin/users/${u.id}/role`, { role: b.dataset.role }), toAdmin ? 'Ahora es administrador' : 'Ya no es administrador');
+      } else if (act === 'logout') {
+        if (!confirm(`¿Cerrar todas las sesiones de ${u.name}? Tendrá que volver a entrar.`)) return;
+        done = await attempt(() => api('POST', `/admin/users/${u.id}/logout`), 'Sesiones cerradas');
+      } else if (act === 'suspend') {
+        const reason = prompt(`Vas a suspender la cuenta de ${u.name}: no podrá entrar hasta que la reactives. Motivo (opcional, queda en el registro):`, '');
+        if (reason === null) return;
+        done = await attempt(() => api('PUT', `/admin/users/${u.id}/suspend`, { suspended: true, reason }), 'Cuenta suspendida');
+      } else if (act === 'unsuspend') {
+        done = await attempt(() => api('PUT', `/admin/users/${u.id}/suspend`, { suspended: false }), 'Cuenta reactivada');
+      } else if (act === 'delete') {
+        return openAdminDelete(u);
+      }
+      if (done) { closeModal(); loadAdminTab(); openAdminUser(u.id); }
+    };
+  });
+}
+
+function openAdminDelete(u) {
+  openModal(`
+    <form id="adm-del" novalidate>
+      <div class="modal-head"><h2>Eliminar la cuenta de ${esc(u.name)}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+      <div class="status warn">${icon('alert')}<span>Se borrarán para siempre su cuenta y todos sus horarios, asignaturas, tareas, exámenes y eventos. No se puede deshacer.</span></div>
+      <label class="field"><span>Motivo (opcional, queda en el registro)</span><input type="text" name="reason" maxlength="300"></label>
+      <label class="field"><span>Tu contraseña, para confirmar</span><input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="error" id="form-error"></div>
+      <div class="modal-foot"><button type="button" class="btn" data-close>Cancelar</button><button class="btn btn-danger-solid">${icon('trash')}Eliminar definitivamente</button></div>
+    </form>`, (root) => {
+    const f = $('#adm-del', root);
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!f.password.value) { $('#form-error', f).textContent = 'Escribe tu contraseña'; return; }
+      try {
+        await api('DELETE', `/admin/users/${u.id}`, { password: f.password.value, reason: f.reason.value });
+        closeModal();
+        toast('Cuenta eliminada');
+        loadAdminTab();
+      } catch (err) { $('#form-error', f).textContent = err.message; }
+    };
+  });
+}
+
+/* ---------- Mensajes ---------- */
+async function adminMessages() {
+  const list = await api('GET', `/admin/messages?status=${admin.msgStatus}`);
+  if (admin.msgStatus === 'open') setOpenMessagesBadge(list.length);
+  const opts = [['open', 'Sin atender'], ['resolved', 'Atendidos'], ['all', 'Todos']];
+  return `
+    <div class="admin-tools"><div class="segmented" id="msg-status">${opts.map(([v, l]) => `<button data-status="${v}" class="${admin.msgStatus === v ? 'active' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="msg-list">${list.map((m) => `
+      <article class="card msg ${m.resolved_at ? 'resolved' : ''}">
+        <div class="msg-head"><b>${esc(m.name)}</b><span class="badge-role topic">${esc(m.topic)}</span>${m.user_id ? '<span class="badge-role user">Usuario</span>' : ''}<small>${esc(fmtWhen(m.created_at))}</small></div>
+        <small class="hint">${esc(m.email)}</small>
+        <p class="msg-body">${esc(m.message)}</p>
+        <div class="msg-actions">
+          <a class="btn btn-sm" href="mailto:${esc(m.email)}?subject=${encodeURIComponent(`Re: ${m.topic} · Kairos`)}">${icon('mail')}Responder</a>
+          <button class="btn btn-sm" data-msg="${m.id}" data-resolve="${m.resolved_at ? '0' : '1'}">${icon('check')}${m.resolved_at ? 'Reabrir' : 'Marcar atendido'}</button>
+          <button class="btn btn-sm btn-ghost btn-danger" data-msg-del="${m.id}">${icon('trash')}Borrar</button>
+        </div>
+      </article>`).join('') || `<div class="empty"><strong>${admin.msgStatus === 'open' ? 'Todo atendido' : 'Sin mensajes'}</strong>${admin.msgStatus === 'open' ? 'No hay mensajes pendientes.' : 'Aquí aparecerán los mensajes del formulario de contacto.'}</div>`}
+    </div>`;
+}
+
+/* ---------- Actividad ---------- */
+async function adminLog() {
+  const list = await api('GET', '/admin/log');
+  return `<p class="hint">Registro de las acciones hechas desde el panel (las 300 más recientes).</p>
+    <div class="log-list">${list.map((l) => `
+      <div class="log-row"><span class="when">${esc(fmtWhen(l.created_at))}</span><span><b>${esc(l.admin_name)}</b> · ${esc(l.action)}${l.target_label ? ` · ${esc(l.target_label)}` : ''}${l.detail ? `<small>${esc(l.detail)}</small>` : ''}</span></div>`).join('') || '<div class="empty"><strong>Sin actividad</strong>Todavía no se ha hecho ninguna acción desde el panel.</div>'}
+    </div>`;
+}
+
+function bindAdminTab(body, tab) {
+  if (tab === 'summary') {
+    $('#admin-test-email', body).onclick = async (e) => {
+      e.currentTarget.disabled = true;
+      const r = await attempt(() => api('POST', '/admin/test-email'));
+      e.currentTarget.disabled = false;
+      if (r) toast(r.mail_configured ? `Correo de prueba enviado a ${state.user.email}` : 'El correo no está configurado');
+    };
+  }
+  if (tab === 'users') {
+    let t;
+    $('#admin-q', body).oninput = (e) => { clearTimeout(t); t = setTimeout(() => { admin.q = e.target.value; loadAdminTab().then(() => { const q = $('#admin-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }); }, 350); };
+    $('#admin-filter', body).onchange = (e) => { admin.filter = e.target.value; loadAdminTab(); };
+    body.onclick = (e) => { const r = e.target.closest('[data-user]'); if (r) openAdminUser(Number(r.dataset.user)); };
+  }
+  if (tab === 'messages') {
+    body.onclick = async (e) => {
+      const st = e.target.closest('[data-status]');
+      if (st) { admin.msgStatus = st.dataset.status; return loadAdminTab(); }
+      const rs = e.target.closest('[data-resolve]');
+      if (rs) { if (await attempt(() => api('PUT', `/admin/messages/${rs.dataset.msg}`, { resolved: rs.dataset.resolve === '1' }), rs.dataset.resolve === '1' ? 'Marcado como atendido' : 'Mensaje reabierto')) loadAdminTab(); return; }
+      const del = e.target.closest('[data-msg-del]');
+      if (del && confirm('¿Borrar este mensaje para siempre?')) { if (await attempt(() => api('DELETE', `/admin/messages/${del.dataset.msgDel}`), 'Mensaje borrado')) loadAdminTab(); }
+    };
+  }
+}
+
+/* ============================================================
    Modales
    ============================================================ */
 let modalRefresh = null;
@@ -2389,5 +2681,5 @@ document.fonts?.ready.then(() => { if (state.view === 'week') fitTimetable(); })
     renderAuth('login');
   }
   // Actualiza la vista (hora actual, vencidas…) cada minuto.
-  setInterval(() => { if (state.user && !$('#modal-root').innerHTML && state.view !== 'settings') renderView(); }, 60000);
+  setInterval(() => { if (state.user && !$('#modal-root').innerHTML && state.view !== 'settings' && state.view !== 'admin') renderView(); }, 60000);
 })();

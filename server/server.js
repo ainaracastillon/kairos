@@ -17,7 +17,9 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const PROD = process.env.NODE_ENV === 'production';
 const SESSION_DAYS = 90;
 const COOKIE = 'kairos_session';
-const TERMS_VERSION = '2026-10-11'; // fecha de los textos legales vigentes (public/legal.html)
+const TERMS_VERSION = '2026-10-11';
+// Superadministradora: la única que puede nombrar o quitar administradores. Se puede cambiar con la variable SUPERADMIN_EMAIL.
+const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'ainara14cs@hotmail.com').trim().toLowerCase(); // fecha de los textos legales vigentes (public/legal.html)
 
 /* ============================================================
    Utilidades
@@ -94,6 +96,9 @@ const fmtUser = (u, tt) => ({
   visible_days: tt ? JSON.parse(tt.visible_days) : [1, 2, 3, 4, 5],
   tt_background: tt ? tt.background : 'rayas',
   // La foto se sirve aparte (no se manda en cada carga); el número cambia cada vez que se actualiza.
+  role: u.role || 'user',
+  is_admin: u.role === 'admin' || u.role === 'superadmin',
+  is_superadmin: u.role === 'superadmin',
   avatar_url: u.avatar_data ? `/api/me/avatar?v=${encodeURIComponent(u.avatar_updated || '')}` : null,
 });
 const fmtTimetable = (t) => ({
@@ -127,9 +132,13 @@ const DEFAULT_SLOTS = [
 async function main() {
   const db = await openDb();
   // Columnas añadidas después de la primera versión (si ya existen, se ignora el error).
-  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT']) {
+  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT', "role TEXT NOT NULL DEFAULT 'user'", 'suspended_at TEXT', 'last_seen_at TEXT']) {
     await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
   }
+  await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
+  // Solo hay una superadministradora: la del correo configurado.
+  await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
+  await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
 
   /* ---------- consultas de apoyo ---------- */
@@ -224,6 +233,12 @@ async function main() {
     if (!token) return null;
     const s = await db.get('SELECT * FROM sessions WHERE token_hash = ?', [sha256(token)]);
     if (!s || s.expires_at < nowIso()) return null;
+    const u = await db.get('SELECT suspended_at, last_seen_at FROM users WHERE id = ?', [s.user_id]);
+    if (!u || u.suspended_at) return null;
+    // Última actividad (como mucho, una escritura cada 10 minutos).
+    if (!u.last_seen_at || Date.now() - Date.parse(u.last_seen_at) > 10 * 60000) {
+      await db.run('UPDATE users SET last_seen_at = ? WHERE id = ?', [nowIso(), s.user_id]).catch(() => {});
+    }
     return s.user_id;
   }
 
@@ -260,8 +275,8 @@ async function main() {
     if (await db.get('SELECT id FROM users WHERE email = ?', [email])) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
     const tz = validTimezone(body.timezone) ? body.timezone : 'Europe/Madrid';
     const uid = await db.tx(async (q) => {
-      const u = await q.run('INSERT INTO users (email, name, password_hash, timezone, created_at, accepted_terms_at, terms_version) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
-        [email, name, hashPassword(password), tz, nowIso(), nowIso(), TERMS_VERSION]);
+      const u = await q.run('INSERT INTO users (email, name, password_hash, timezone, created_at, accepted_terms_at, terms_version, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+        [email, name, hashPassword(password), tz, nowIso(), nowIso(), TERMS_VERSION, email === SUPERADMIN_EMAIL ? 'superadmin' : 'user']);
       const ttId = await createTimetable(q, u.id, { name: 'Mi horario', start_date: null, end_date: null, visible_days: [1, 2, 3, 4, 5] });
       await q.run('UPDATE users SET active_timetable_id = ? WHERE id = ?', [ttId, u.id]);
       return u.id;
@@ -275,6 +290,7 @@ async function main() {
     const email = str(body.email, 200).toLowerCase();
     const u = await db.get('SELECT * FROM users WHERE email = ?', [email]);
     if (!u || !checkPassword(String(body.password || ''), u.password_hash)) throw new HttpError(401, 'Correo o contraseña incorrectos');
+    if (u.suspended_at) throw new HttpError(403, 'Tu cuenta está suspendida. Si crees que es un error, escríbenos desde el formulario de contacto.');
     await startSession(res, u.id);
     return { user: await userOut(u.id) };
   }, { auth: false });
@@ -323,12 +339,237 @@ async function main() {
   route('PUT', '/me/email', async ({ uid, body }) => {
     const u = await getUser(uid);
     if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
+    if (u.role === 'superadmin') throw bad('El correo de la superadministradora está fijado en la configuración del servidor y no se puede cambiar desde aquí.');
     const email = str(body.email, 200).toLowerCase();
+    if (email === SUPERADMIN_EMAIL) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Escribe un correo electrónico válido');
     if (email === u.email) return { user: await userOut(uid) };
     if (await db.get('SELECT id FROM users WHERE email = ?', [email])) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
     await db.run('UPDATE users SET email = ? WHERE id = ?', [email, uid]);
     return { user: await userOut(uid) };
+  });
+
+  /** Borra una cuenta y todos sus datos. */
+  async function deleteUserData(uid) {
+    await db.tx(async (q) => {
+      await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
+      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions']) {
+        await q.run(`DELETE FROM ${t} WHERE user_id = ?`, [uid]);
+      }
+      await q.run('UPDATE contact_messages SET user_id = NULL WHERE user_id = ?', [uid]);
+      await q.run('DELETE FROM users WHERE id = ?', [uid]);
+    });
+  }
+
+  /* ============================================================
+     Panel de administración
+     ============================================================ */
+  const isAdmin = (u) => u && (u.role === 'admin' || u.role === 'superadmin');
+  async function requireAdmin(uid) {
+    const u = await getUser(uid);
+    if (!isAdmin(u)) throw new HttpError(403, 'Solo para administración');
+    return u;
+  }
+  async function requireSuper(uid) {
+    const u = await getUser(uid);
+    if (!u || u.role !== 'superadmin') throw new HttpError(403, 'Solo la superadministradora puede hacer esto');
+    return u;
+  }
+  async function logAdmin(admin, action, target, detail = '') {
+    await db.run('INSERT INTO admin_log (admin_id, admin_name, action, target_user_id, target_label, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [admin.id, admin.name, action, target?.id ?? null, target ? `${target.name} <${target.email}>` : '', detail, nowIso()]);
+  }
+  /** Comprueba que el admin puede actuar sobre esa cuenta: nunca sobre sí mismo ni sobre la superadmin; sobre otros admins, solo la superadmin. */
+  async function targetUser(admin, id) {
+    const t = await getUser(Number(id));
+    if (!t) throw notFound('Usuario no encontrado');
+    if (t.id === admin.id) throw bad('No puedes hacer esto con tu propia cuenta desde el panel');
+    if (t.role === 'superadmin') throw new HttpError(403, 'La cuenta de la superadministradora está protegida');
+    if (t.role === 'admin' && admin.role !== 'superadmin') throw new HttpError(403, 'Solo la superadministradora puede actuar sobre otros administradores');
+    return t;
+  }
+  const qs = (req) => new URL(req.url, 'http://x').searchParams;
+  const count = async (sql, params = []) => Number((await db.get(sql, params))?.n || 0);
+  const adminUserRow = (u, c = {}) => ({
+    id: u.id, name: u.name, email: u.email, role: u.role || 'user',
+    created_at: u.created_at, last_seen_at: u.last_seen_at || null, suspended_at: u.suspended_at || null,
+    avatar_url: u.avatar_updated ? `/api/admin/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar_updated)}` : null,
+    timetables: Number(c.timetables || 0), tasks: Number(c.tasks || 0), exams: Number(c.exams || 0), events: Number(c.events || 0),
+  });
+
+  route('GET', '/admin/stats', async ({ uid }) => {
+    await requireAdmin(uid);
+    const now = Date.now();
+    const ago = (d) => new Date(now - d * 86400000).toISOString();
+    const signups = await db.all('SELECT created_at FROM users WHERE created_at >= ?', [ago(30)]);
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const perDay = {};
+    for (let i = 29; i >= 0; i--) perDay[fmt.format(new Date(now - i * 86400000))] = 0;
+    for (const r of signups) { const k = fmt.format(new Date(r.created_at)); if (k in perDay) perDay[k]++; }
+    return {
+      users: {
+        total: await count('SELECT COUNT(*) AS n FROM users'),
+        admins: await count("SELECT COUNT(*) AS n FROM users WHERE role IN ('admin', 'superadmin')"),
+        suspended: await count('SELECT COUNT(*) AS n FROM users WHERE suspended_at IS NOT NULL'),
+        new7: await count('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?', [ago(7)]),
+        new30: signups.length,
+        active7: await count('SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= ?', [ago(7)]),
+        active30: await count('SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= ?', [ago(30)]),
+        with_push: await count('SELECT COUNT(DISTINCT user_id) AS n FROM push_subscriptions'),
+        email_on: await count('SELECT COUNT(*) AS n FROM users WHERE email_notifications = 1'),
+      },
+      content: {
+        timetables: await count('SELECT COUNT(*) AS n FROM timetables'),
+        subjects: await count('SELECT COUNT(*) AS n FROM subjects'),
+        tasks: await count("SELECT COUNT(*) AS n FROM items WHERE type = 'task'"),
+        exams: await count("SELECT COUNT(*) AS n FROM items WHERE type = 'exam'"),
+        done: await count('SELECT COUNT(*) AS n FROM items WHERE done = 1'),
+        events: await count('SELECT COUNT(*) AS n FROM events'),
+      },
+      messages_open: await count('SELECT COUNT(*) AS n FROM contact_messages WHERE resolved_at IS NULL'),
+      signups_per_day: Object.entries(perDay).map(([date, n]) => ({ date, n })),
+      system: {
+        database: db.kind === 'postgres' ? 'PostgreSQL' : 'SQLite',
+        mail: notify.mailConfigured(),
+        mail_provider: process.env.BREVO_API_KEY ? 'Brevo' : process.env.RESEND_API_KEY ? 'Resend' : process.env.SMTP_HOST ? 'SMTP' : null,
+        push: notify.pushAvailable(),
+        node: process.version,
+        uptime_s: Math.round(process.uptime()),
+      },
+    };
+  });
+
+  route('GET', '/admin/users', async ({ uid, req }) => {
+    await requireAdmin(uid);
+    const p = qs(req);
+    const q = (p.get('q') || '').trim().toLowerCase().slice(0, 100);
+    const filter = p.get('filter') || 'all';
+    const where = [];
+    const params = [];
+    if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push(`%${q}%`, `%${q}%`); }
+    if (filter === 'admins') where.push("u.role IN ('admin', 'superadmin')");
+    if (filter === 'suspended') where.push('u.suspended_at IS NOT NULL');
+    if (filter === 'active') where.push('u.last_seen_at >= ?'), params.push(new Date(Date.now() - 7 * 86400000).toISOString());
+    const sql = `SELECT u.id, u.name, u.email, u.role, u.created_at, u.last_seen_at, u.suspended_at, u.avatar_updated,
+        (SELECT COUNT(*) FROM timetables t WHERE t.user_id = u.id) AS timetables,
+        (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'task') AS tasks,
+        (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id AND i.type = 'exam') AS exams,
+        (SELECT COUNT(*) FROM events e WHERE e.user_id = u.id) AS events
+      FROM users u ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY CASE u.role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300`;
+    const rows = await db.all(sql, params);
+    return rows.map((r) => adminUserRow(r, r));
+  });
+
+  route('GET', '/admin/users/:id', async ({ uid, params }) => {
+    await requireAdmin(uid);
+    const u = await getUser(Number(params.id));
+    if (!u) throw notFound('Usuario no encontrado');
+    const c = await db.get(`SELECT
+        (SELECT COUNT(*) FROM timetables WHERE user_id = ?) AS timetables,
+        (SELECT COUNT(*) FROM items WHERE user_id = ? AND type = 'task') AS tasks,
+        (SELECT COUNT(*) FROM items WHERE user_id = ? AND type = 'exam') AS exams,
+        (SELECT COUNT(*) FROM events WHERE user_id = ?) AS events`, [u.id, u.id, u.id, u.id]);
+    return {
+      ...adminUserRow(u, c),
+      timezone: u.timezone,
+      subjects: await count('SELECT COUNT(*) AS n FROM subjects WHERE user_id = ?', [u.id]),
+      push_devices: await count('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?', [u.id]),
+      sessions: await count('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND expires_at > ?', [u.id, nowIso()]),
+      email_notifications: Boolean(u.email_notifications),
+      daily_digest: Boolean(u.daily_digest),
+      accepted_terms_at: u.accepted_terms_at || null,
+      messages: await count('SELECT COUNT(*) AS n FROM contact_messages WHERE user_id = ? OR email = ?', [u.id, u.email]),
+    };
+  });
+
+  route('GET', '/admin/users/:id/avatar', async ({ uid, params }) => {
+    await requireAdmin(uid);
+    const u = await getUser(Number(params.id));
+    const m = u?.avatar_data && u.avatar_data.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw notFound('Sin foto');
+    return { __binary: Buffer.from(m[2], 'base64'), type: m[1] };
+  });
+
+  route('PUT', '/admin/users/:id/role', async ({ uid, params, body }) => {
+    const admin = await requireSuper(uid);
+    const t = await targetUser(admin, params.id);
+    const role = body.role === 'admin' ? 'admin' : 'user';
+    if (t.suspended_at && role === 'admin') throw bad('Reactiva la cuenta antes de hacerla administradora');
+    await db.run('UPDATE users SET role = ? WHERE id = ?', [role, t.id]);
+    await logAdmin(admin, role === 'admin' ? 'Nombrar administrador' : 'Quitar administrador', t);
+    return { ok: true };
+  });
+
+  route('PUT', '/admin/users/:id/suspend', async ({ uid, params, body }) => {
+    const admin = await requireAdmin(uid);
+    const t = await targetUser(admin, params.id);
+    const suspend = body.suspended === true;
+    const reason = str(body.reason, 300);
+    if (suspend) {
+      await db.run('UPDATE users SET suspended_at = ? WHERE id = ?', [nowIso(), t.id]);
+      await db.run('DELETE FROM sessions WHERE user_id = ?', [t.id]);
+    } else {
+      await db.run('UPDATE users SET suspended_at = NULL WHERE id = ?', [t.id]);
+    }
+    await logAdmin(admin, suspend ? 'Suspender cuenta' : 'Reactivar cuenta', t, reason);
+    return { ok: true };
+  });
+
+  route('POST', '/admin/users/:id/logout', async ({ uid, params }) => {
+    const admin = await requireAdmin(uid);
+    const t = await targetUser(admin, params.id);
+    await db.run('DELETE FROM sessions WHERE user_id = ?', [t.id]);
+    await logAdmin(admin, 'Cerrar sesiones', t);
+    return { ok: true };
+  });
+
+  route('DELETE', '/admin/users/:id', async ({ uid, params, body }) => {
+    const admin = await requireAdmin(uid);
+    if (!checkPassword(String(body.password || ''), admin.password_hash)) throw bad('Tu contraseña no es correcta');
+    const t = await targetUser(admin, params.id);
+    await logAdmin(admin, 'Eliminar cuenta', t, str(body.reason, 300));
+    await deleteUserData(t.id);
+    return { ok: true };
+  });
+
+  route('GET', '/admin/messages', async ({ uid, req }) => {
+    await requireAdmin(uid);
+    const status = qs(req).get('status') || 'open';
+    const where = status === 'open' ? 'WHERE resolved_at IS NULL' : status === 'resolved' ? 'WHERE resolved_at IS NOT NULL' : '';
+    return db.all(`SELECT id, user_id, name, email, topic, message, emailed, created_at, resolved_at FROM contact_messages ${where} ORDER BY created_at DESC LIMIT 300`);
+  });
+  route('PUT', '/admin/messages/:id', async ({ uid, params, body }) => {
+    const admin = await requireAdmin(uid);
+    const m = await db.get('SELECT * FROM contact_messages WHERE id = ?', [Number(params.id)]);
+    if (!m) throw notFound('Mensaje no encontrado');
+    await db.run('UPDATE contact_messages SET resolved_at = ? WHERE id = ?', [body.resolved ? nowIso() : null, m.id]);
+    await logAdmin(admin, body.resolved ? 'Mensaje atendido' : 'Mensaje reabierto', null, `${m.name}: ${m.topic}`);
+    return { ok: true };
+  });
+  route('DELETE', '/admin/messages/:id', async ({ uid, params }) => {
+    const admin = await requireAdmin(uid);
+    const m = await db.get('SELECT * FROM contact_messages WHERE id = ?', [Number(params.id)]);
+    if (!m) throw notFound('Mensaje no encontrado');
+    await db.run('DELETE FROM contact_messages WHERE id = ?', [m.id]);
+    await logAdmin(admin, 'Borrar mensaje', null, `${m.name}: ${m.topic}`);
+    return { ok: true };
+  });
+
+  route('GET', '/admin/log', async ({ uid }) => {
+    await requireAdmin(uid);
+    return db.all('SELECT * FROM admin_log ORDER BY created_at DESC, id DESC LIMIT 300');
+  });
+
+  route('POST', '/admin/test-email', async ({ uid, req }) => {
+    const admin = await requireAdmin(uid);
+    await notify.sendMail({
+      to: admin.email,
+      subject: 'Prueba del panel de administración de Kairos',
+      text: 'El envío de correos de Kairos funciona.',
+      html: notify.mailHtml('El correo funciona', '<p>Este es un correo de prueba enviado desde el panel de administración.</p>', appUrl(req)),
+    });
+    return { mail_configured: notify.mailConfigured() };
   });
 
   /* ---------- foto de perfil ---------- */
@@ -386,13 +627,8 @@ async function main() {
   route('DELETE', '/me', async ({ uid, body, res }) => {
     const u = await getUser(uid);
     if (!checkPassword(String(body.password || ''), u.password_hash)) throw bad('La contraseña no es correcta');
-    await db.tx(async (q) => {
-      await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
-      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions']) {
-        await q.run(`DELETE FROM ${t} WHERE user_id = ?`, [uid]);
-      }
-      await q.run('DELETE FROM users WHERE id = ?', [uid]);
-    });
+    if (u.role === 'superadmin') throw bad('La cuenta de la superadministradora no se puede eliminar desde la app.');
+    await deleteUserData(uid);
     setCookie(res, '', 0);
     return null;
   });
