@@ -93,6 +93,8 @@ const fmtUser = (u, tt) => ({
   digest_hour: u.digest_hour,
   visible_days: tt ? JSON.parse(tt.visible_days) : [1, 2, 3, 4, 5],
   tt_background: tt ? tt.background : 'rayas',
+  // La foto se sirve aparte (no se manda en cada carga); el número cambia cada vez que se actualiza.
+  avatar_url: u.avatar_data ? `/api/me/avatar?v=${encodeURIComponent(u.avatar_updated || '')}` : null,
 });
 const fmtTimetable = (t) => ({
   id: t.id, name: t.name, start_date: t.start_date || null, end_date: t.end_date || null,
@@ -125,7 +127,7 @@ const DEFAULT_SLOTS = [
 async function main() {
   const db = await openDb();
   // Columnas añadidas después de la primera versión (si ya existen, se ignora el error).
-  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT']) {
+  for (const col of ['accepted_terms_at TEXT', 'terms_version TEXT', 'avatar_data TEXT', 'avatar_updated TEXT']) {
     await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
   }
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
@@ -329,6 +331,34 @@ async function main() {
     return { user: await userOut(uid) };
   });
 
+  /* ---------- foto de perfil ---------- */
+  const AVATAR_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
+  route('GET', '/me/avatar', async ({ uid }) => {
+    const u = await getUser(uid);
+    const m = u.avatar_data && u.avatar_data.match(AVATAR_RE);
+    if (!m) throw notFound('No tienes foto de perfil');
+    return { __binary: Buffer.from(m[2], 'base64'), type: m[1] };
+  });
+  route('PUT', '/me/avatar', async ({ uid, body }) => {
+    const img = String(body.image || '');
+    const m = img.match(AVATAR_RE);
+    if (!m) throw bad('La imagen no es válida. Usa una foto JPG, PNG o WebP.');
+    const bytes = Buffer.from(m[2], 'base64');
+    if (bytes.length > 300 * 1024) throw bad('La foto es demasiado grande');
+    // Comprobación de la firma del archivo para no guardar algo que no sea una imagen.
+    const sig = bytes.subarray(0, 12);
+    const isJpeg = sig[0] === 0xff && sig[1] === 0xd8;
+    const isPng = sig.subarray(0, 4).toString('hex') === '89504e47';
+    const isWebp = sig.subarray(0, 4).toString() === 'RIFF' && sig.subarray(8, 12).toString() === 'WEBP';
+    if (!isJpeg && !isPng && !isWebp) throw bad('La imagen no es válida. Usa una foto JPG, PNG o WebP.');
+    await db.run('UPDATE users SET avatar_data = ?, avatar_updated = ? WHERE id = ?', [img, String(Date.now()), uid]);
+    return { user: await userOut(uid) };
+  });
+  route('DELETE', '/me/avatar', async ({ uid }) => {
+    await db.run('UPDATE users SET avatar_data = NULL, avatar_updated = NULL WHERE id = ?', [uid]);
+    return { user: await userOut(uid) };
+  });
+
   /** Derecho de acceso y portabilidad: todos los datos de la cuenta en un archivo JSON. */
   route('GET', '/me/export', async ({ uid }) => {
     const u = await getUser(uid);
@@ -338,6 +368,7 @@ async function main() {
       account: {
         name: u.name, email: u.email, timezone: u.timezone, created_at: u.created_at,
         accepted_terms_at: u.accepted_terms_at || null, terms_version: u.terms_version || null,
+        profile_photo: u.avatar_data || null,
         email_notifications: Boolean(u.email_notifications), default_reminder_minutes: u.default_reminder_minutes ?? null,
         daily_digest: Boolean(u.daily_digest), digest_hour: u.digest_hour,
       },
@@ -761,6 +792,11 @@ async function main() {
     if (r.auth && !uid) throw new HttpError(401, 'Inicia sesión para continuar');
     const body = req.method === 'GET' ? {} : await readBody(req);
     const data = await r.handler({ req, res, body, params, uid });
+    if (data && data.__binary) {
+      res.writeHead(200, { 'Content-Type': data.type, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+      res.end(data.__binary);
+      return;
+    }
     sendJson(res, 200, data);
   }
 

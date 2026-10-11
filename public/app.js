@@ -58,6 +58,12 @@ const icon = (name, cls = '') =>
 const LOGO = `<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#14213d"/><circle cx="16" cy="16" r="10.5" fill="none" stroke="#fff" stroke-width="2"/><path d="M15.2 9.05v2.3M16.8 9.05l-1.35 1.15 1.35 1.15" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5.2-4.4" stroke="#fca311" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="17" r="1.8" fill="#fca311"/><path d="M24.8 4.6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" fill="#fca311"/></svg>`;
 const brand = () => `<div class="brand">${LOGO}<span class="wordmark">Kairos</span></div>`;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+/** Círculo con la foto de perfil o, si no hay, las iniciales. */
+function avatarHtml(u, cls = '') {
+  return u.avatar_url
+    ? `<span class="avatar has-photo ${cls}" aria-hidden="true"><img src="${esc(u.avatar_url)}" alt=""></span>`
+    : `<span class="avatar ${cls}" aria-hidden="true">${esc(initials(u.name))}</span>`;
+}
 function initials(name) {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
@@ -337,7 +343,7 @@ function renderShell() {
       <nav class="tabs">${VIEWS.filter((v) => TAB_VIEWS.includes(v[0])).map(([id, ic, label, short]) => `<button data-view="${id}">${icon(ic)}<span class="long">${label}</span><span class="short">${short}</span></button>`).join('')}</nav>
       <div class="userbox">
         <button class="user-btn" id="user-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" title="Tu cuenta">
-          <span class="avatar" aria-hidden="true">${esc(initials(state.user.name))}</span><span class="name">${esc(state.user.name)}</span>${icon('down')}
+          ${avatarHtml(state.user)}<span class="name">${esc(state.user.name)}</span>${icon('down')}
         </button>
         <div class="user-menu" id="user-menu" role="menu" hidden>
           <div class="um-head"><b class="um-name">${esc(state.user.name)}</b><small>${esc(state.user.email)}</small></div>
@@ -1671,8 +1677,17 @@ function accountView() {
   const u = state.user;
   return `<div class="scroll"><div class="settings account">
     <section class="card account-head">
-      <span class="avatar big" aria-hidden="true">${esc(initials(u.name))}</span>
-      <div><h2>${esc(u.name)}</h2><p class="hint" style="margin:2px 0 0">${esc(u.email)}</p></div>
+      <div class="photo-pick">
+        ${avatarHtml(u, 'big')}
+        <label class="photo-edit" title="Cambiar foto" aria-label="Cambiar foto de perfil">${icon('pencil')}<input type="file" id="avatar-file" accept="image/*" hidden></label>
+      </div>
+      <div class="head-info">
+        <h2>${esc(u.name)}</h2><p class="hint" style="margin:2px 0 8px">${esc(u.email)}</p>
+        <div class="photo-actions">
+          <label class="btn btn-sm" for="avatar-file">${u.avatar_url ? 'Cambiar foto' : 'Añadir foto'}</label>
+          ${u.avatar_url ? '<button class="btn btn-sm btn-ghost" id="avatar-remove">Quitar</button>' : ''}
+        </div>
+      </div>
     </section>
 
     <section class="card">
@@ -1736,12 +1751,61 @@ function accountView() {
 
 function refreshUserBox() {
   $('.userbox .name').textContent = state.user.name;
-  $('.userbox .avatar').textContent = initials(state.user.name);
+  $('.userbox .avatar').outerHTML = avatarHtml(state.user);
   $('.um-name').textContent = state.user.name;
   $('.um-head small').textContent = state.user.email;
 }
 
+/** Recorta la foto en cuadrado (centrada), la reduce a 320 px y la convierte a JPEG para que pese poco. */
+async function photoToDataUrl(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    bitmap = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('No se ha podido leer la imagen. Prueba con otra foto (JPG o PNG).'));
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  const w = bitmap.width;
+  const h = bitmap.height;
+  const side = Math.min(w, h);
+  const size = Math.min(320, side);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(bitmap, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 function bindAccount(root) {
+  $('#avatar-file', root).onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('Elige una imagen', true); return; }
+    if (file.size > 25 * 1024 * 1024) { toast('La foto es demasiado grande (máximo 25 MB)', true); return; }
+    try {
+      const image = await photoToDataUrl(file);
+      const r = await api('PUT', '/me/avatar', { image });
+      state.user = r.user;
+      refreshUserBox();
+      renderView();
+      toast('Foto de perfil actualizada');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
+  const rm = $('#avatar-remove', root);
+  if (rm) rm.onclick = async () => {
+    const r = await attempt(() => api('DELETE', '/me/avatar'), 'Foto quitada');
+    if (r) { state.user = r.user; refreshUserBox(); renderView(); }
+  };
   $('#name-form', root).onsubmit = async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('PUT', '/me/settings', { name: e.target.name.value }), 'Nombre guardado');
