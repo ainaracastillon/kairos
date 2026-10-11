@@ -434,10 +434,12 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .bg-noche .tt-cell .plus { color: #cfd4d8; }
 .bg-noche .tt-break { background: #4a5057; color: #d8dcdf; }
 .bg-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
-.bg-option { border: 2px solid var(--border); background: var(--surface); border-radius: 12px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; font-weight: 500; font-size: 13.5px; }
+.bg-option { border: 2px solid var(--border); background: var(--surface); color: var(--text); border-radius: 12px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-weight: 500; font-size: 13.5px; text-align: left; width: 100%; min-width: 0; }
 .bg-option:hover { border-color: var(--border-strong); }
 .bg-option.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
-.bg-swatch { display: block; height: 62px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, .06); }
+/* En Safari de iPhone los hijos de un botón no se estiran solos: sin ancho explícito la muestra se quedaba en una raya. */
+.bg-swatch { display: block; width: 100%; height: 62px; flex: none; border-radius: 8px; border: 1px solid rgba(0, 0, 0, .06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .04); }
+.bg-option > span:last-child { padding: 0 2px 2px; }
 
 /* Tramos pendientes de guardar */
 .slot-row.dirty { box-shadow: -10px 0 0 -6px var(--warm); }
