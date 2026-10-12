@@ -206,8 +206,24 @@ function ttCovers(tt, d) {
   const k = typeof d === 'string' ? d : dateKey(d);
   return (!tt.start_date || k >= tt.start_date) && (!tt.end_date || k <= tt.end_date);
 }
-/** Clases de un horario en una fecha concreta (según sus días y sus fechas). */
-const classesOnDate = (tt, d) => (ttCovers(tt, d) && ttDays(tt).includes(d.getDay()) ? classesOn(d.getDay(), tt.id) : []);
+/** Una asignatura (y su asignatura madre) puede tener fecha de inicio y de fin. */
+function subjectActiveOn(s, k) {
+  for (const x of [s, parentOf(s)]) {
+    if (x && ((x.start_date && k < x.start_date) || (x.end_date && k > x.end_date))) return false;
+  }
+  return true;
+}
+/** Clases de un horario en una fecha concreta (según sus días, sus fechas y las de cada asignatura). */
+function classesOnDate(tt, d) {
+  if (!ttCovers(tt, d) || !ttDays(tt).includes(d.getDay())) return [];
+  const k = dateKey(d);
+  return classesOn(d.getDay(), tt.id).filter((c) => subjectActiveOn(c.subject, k));
+}
+/** «Del 15 sept 2026 al 20 ene 2027», «Desde…», «Hasta…» o ''. */
+function datesLabel(start, end) {
+  const f = (k) => parseKey(k).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  return start && end ? `Del ${f(start)} al ${f(end)}` : start ? `Desde el ${f(start)}` : end ? `Hasta el ${f(end)}` : '';
+}
 /* Cada horario es independiente: sus tareas, exámenes y eventos solo se ven en él. */
 const ttItems = (ttId = activeTT().id) => state.items.filter((i) => i.timetable_id === ttId);
 const ttEvents = (ttId = activeTT().id) => state.events.filter((e) => e.timetable_id === ttId);
@@ -750,8 +766,9 @@ function monthView() {
   const classCache = new Map();
   const classesFor = (d) => {
     if (!ttCovers(tt, d)) return [];
-    if (!classCache.has(d.getDay())) classCache.set(d.getDay(), classesOnDate(tt, d));
-    return classCache.get(d.getDay());
+    const k = dateKey(d);
+    if (!classCache.has(k)) classCache.set(k, classesOnDate(tt, d));
+    return classCache.get(k);
   };
   const title = cap(state.cursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }));
   const monthPrefix = `${y}-${pad(m + 1)}`;
@@ -1677,6 +1694,7 @@ function subjectsView() {
           <div class="info">${icon('pin')}${s.room ? `Aula ${esc(s.room)}` : 'Sin aula'}</div>
           <div class="info">${icon('user')}${esc(s.teacher || 'Sin profesor asignado')}</div>
           <div class="info">${icon('clock')}${plural(hours(s.id), 'clase', 'clases')} a la semana</div>
+          ${s.start_date || s.end_date ? `<div class="info">${icon('calendar')}${esc(datesLabel(s.start_date, s.end_date))}${s.end_date && s.end_date < dateKey(new Date()) ? ' · <b>terminada</b>' : s.start_date && s.start_date > dateKey(new Date()) ? ' · <b>aún no empieza</b>' : ''}</div>` : ''}
           <div class="subs">
             ${subsOf(s.id).map((c) => `<button type="button" class="sub-chip" data-action="editSubject" data-id="${c.id}" style="--c:${c.color}" title="Editar ${esc(c.name)}"><i></i>${esc(c.name)}${c.room ? `<small>${esc(c.room)}</small>` : ''}</button>`).join('')}
             <button type="button" class="sub-chip add" data-action="newSub" data-parent="${s.id}">${icon('plus')}Subasignatura</button>
@@ -1721,6 +1739,11 @@ function openSubjectModal(subject, parent = null) {
         <label class="field"><span>Profesor/a</span><input type="text" name="teacher" value="${esc(s.teacher)}" placeholder="${esc(inherit(parent?.teacher, 'Ana García'))}"></label>
       </div>
       ${parent ? `<p class="hint" style="margin:-6px 0 14px">Si dejas el aula o el profesor vacíos, se usan los de «${esc(parent.name)}».</p>` : ''}
+      <div class="row">
+        <label class="field"><span>Empieza el (opcional)</span><input type="date" name="start_date" value="${esc(s.start_date || '')}"></label>
+        <label class="field"><span>Termina el (opcional)</span><input type="date" name="end_date" value="${esc(s.end_date || '')}"></label>
+      </div>
+      <p class="hint" style="margin:-6px 0 14px">Sus clases solo aparecerán entre esas fechas${parent && (parent.start_date || parent.end_date) ? ` y dentro de las de «${esc(parent.name)}» (${esc(datesLabel(parent.start_date, parent.end_date).toLowerCase())})` : ''}. Déjalas vacías si dura todo el horario.</p>
       <div class="field"><span>Color</span>
         <div class="swatches">
           ${PALETTE.map((c) => `<button type="button" class="swatch ${c === s.color ? 'active' : ''}" data-color="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}
@@ -1747,6 +1770,9 @@ function openSubjectModal(subject, parent = null) {
     form.onsubmit = async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form));
+      data.start_date = data.start_date || null;
+      data.end_date = data.end_date || null;
+      if (data.start_date && data.end_date && data.end_date < data.start_date) { $('#form-error', form).textContent = 'La fecha de fin debe ser posterior a la de inicio'; return; }
       try {
         const saved = subject
           ? await api('PUT', `/subjects/${subject.id}`, data)
