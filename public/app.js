@@ -2703,7 +2703,7 @@ function dayDetail(key, inModal, extra = '') {
           <span class="time">${start} – ${end}</span>
           <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
         </div>`).join('')}</div>` : ''}
-      ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
+      ${inModal && dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       ${inModal && items.length ? `<div class="group-title">Tareas y exámenes</div><div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : ''}
       ${inModal && !classes.length && !dayEvents.length && !items.length ? '<p class="hint">Nada para este día.</p>' : ''}
       ${extra}
