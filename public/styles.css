@@ -835,3 +835,17 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .day-item .overdue { color: var(--danger); font-weight: 600; }
 .day-item b { overflow-wrap: anywhere; }
 .month-items-title { margin-top: 26px; }
+
+/* ---------- Listas del mes: tareas, exámenes y eventos ---------- */
+.month-lists { margin-top: 18px; flex: none; }
+.month-lists-inner { display: grid; gap: 4px 20px; }
+@media (min-width: 900px) { .month-lists-inner { grid-template-columns: repeat(3, minmax(0, 1fr)); } .month-lists .group-title { margin-top: 4px; } }
+.month-list .count { font-weight: 600; color: var(--text); margin-left: 4px; }
+.ev-row-month { cursor: pointer; }
+.ev-row-month .time { width: 70px; }
+.ev-check { display: flex; align-items: center; padding: 6px; margin: -6px 0 -6px -6px; cursor: pointer; }
+.ev-check input { width: 20px; height: 20px; }
+.ev-row-month.done b { text-decoration: line-through; color: var(--muted); }
+.ev-row-month.done { opacity: .7; }
+.ev-chip.done { opacity: .55; text-decoration: line-through; }
+.event-card.done h3 { text-decoration: line-through; color: var(--muted); }

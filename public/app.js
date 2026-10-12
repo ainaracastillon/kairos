@@ -609,6 +609,11 @@ window.addEventListener('hashchange', () => {
 function bindViewEvents(root) {
   root.addEventListener('change', async (e) => {
     const t = e.target;
+    if (t.dataset.evDone) {
+      const ev = await attempt(() => api('PUT', `/events/${t.dataset.evDone}/done`, { done: t.checked }));
+      if (ev) { upsertEvent(ev); refresh(); if (ev.done) toast('Evento marcado como hecho'); } else t.checked = !t.checked;
+      return;
+    }
     if (t.dataset.toggle) {
       const item = await attempt(() => api('PUT', `/items/${t.dataset.toggle}`, { done: t.checked }));
       if (item) { upsertItem(item); refresh(); if (item.done) toast('Marcada como hecha'); } else t.checked = !t.checked;
@@ -735,7 +740,7 @@ const ACTIONS = {
 function eventChip(ev, key) {
   const startKey = dateKey(new Date(ev.start_at));
   const time = ev.all_day || key !== startKey ? '' : `<time>${timeOf(new Date(ev.start_at))}</time>`;
-  return `<div class="ev-chip" data-event="${ev.id}" style="--c:${ev.color}" title="${esc(`Evento: ${ev.title} · ${eventTimeLabel(ev)}${ev.location ? ` · ${ev.location}` : ''}`)}">
+  return `<div class="ev-chip ${ev.done ? 'done' : ''}" data-event="${ev.id}" style="--c:${ev.color}" title="${esc(`Evento: ${ev.title} · ${eventTimeLabel(ev)}${ev.location ? ` · ${ev.location}` : ''}`)}">
     <span class="t">${time}${esc(ev.title)}</span></div>`;
 }
 
@@ -801,6 +806,7 @@ function monthView() {
   const title = cap(state.cursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }));
   const monthPrefix = `${y}-${pad(m + 1)}`;
   const monthItems = items.filter((i) => dateKey(new Date(i.due_at)).startsWith(monthPrefix));
+  const monthEvents = ttEvents(tt.id).filter((ev) => eventDayKeys(ev).some((k) => k.startsWith(monthPrefix)));
   const pendingExams = monthItems.filter((i) => i.type === 'exam' && !i.done).length;
   const pendingTasks = monthItems.filter((i) => i.type === 'task' && !i.done).length;
 
@@ -848,7 +854,9 @@ function monthView() {
       ${days.map((d) => `<div class="dow">${DAY_SHORT[d]}</div>`).join('')}
       ${cells.join('')}
     </div>
-    ${mobile ? `<section class="agenda">${dayDetail(state.selectedDay, false)}${monthItemsSection(monthItems.filter((i) => !i.done), title)}</section></div>` : ''}`;
+    ${mobile
+      ? `<section class="agenda">${dayDetail(state.selectedDay, false, monthLists(monthItems, monthEvents, title))}</section></div>`
+      : `<section class="month-lists">${monthLists(monthItems, monthEvents, title)}</section>`}`;
 }
 
 /** Tarea o examen solo para informar (sin casilla ni lista de pasos), con el aspecto de las clases. */
@@ -862,11 +870,35 @@ function dayItemRow(item, withDate = false) {
   </div>`;
 }
 
-/** Todas las tareas y exámenes pendientes del mes, siempre visibles en Mes. */
-function monthItemsSection(list, monthTitle) {
-  const sorted = [...list].sort((a, b) => a.due_at.localeCompare(b.due_at));
-  return `<div class="group-title month-items-title">Pendiente en ${esc(monthTitle.toLowerCase())}</div>
-    ${sorted.length ? `<div class="day-classes">${sorted.map((i) => dayItemRow(i, true)).join('')}</div>` : '<p class="hint">No hay tareas ni exámenes pendientes este mes.</p>'}`;
+/**
+ * Listas del mes, siempre visibles en Mes: tareas y exámenes pendientes (solo informativos)
+ * y eventos, que sí se pueden marcar como hechos desde aquí.
+ */
+function monthLists(items, events, monthTitle) {
+  const month = monthTitle.replace(/ de \d{4}$/, '').toLowerCase();
+  const pending = [...items].filter((i) => !i.done).sort((a, b) => a.due_at.localeCompare(b.due_at));
+  const tasks = pending.filter((i) => i.type === 'task');
+  const exams = pending.filter((i) => i.type === 'exam');
+  const evs = [...events].sort((a, b) => Number(a.done) - Number(b.done) || a.start_at.localeCompare(b.start_at));
+  const block = (title, cls, list, row, empty) => `<div class="month-list ${cls}">
+    <div class="group-title">${title} <span class="count">${list.filter((x) => !x.done).length || ''}</span></div>
+    ${list.length ? `<div class="day-classes">${list.map(row).join('')}</div>` : `<p class="hint">${empty}</p>`}
+  </div>`;
+  return `<div class="month-lists-inner">
+    ${block(`Tareas de ${esc(month)}`, 'tasks', tasks, (i) => dayItemRow(i, true), 'No hay tareas pendientes este mes.')}
+    ${block(`Exámenes de ${esc(month)}`, 'exams', exams, (i) => dayItemRow(i, true), 'No hay exámenes este mes.')}
+    ${block(`Eventos de ${esc(month)}`, 'events', evs, monthEventRow, 'No hay eventos este mes.')}
+  </div>`;
+}
+
+/** Evento en la lista del mes: se puede marcar como hecho; al pulsarlo, se ven sus detalles. */
+function monthEventRow(ev) {
+  const d = new Date(ev.start_at);
+  return `<div class="day-class day-item ev-row-month ${ev.done ? 'done' : ''}" data-event="${ev.id}" style="--c:${ev.color}">
+    <label class="ev-check" title="${ev.done ? 'Marcar como pendiente' : 'Marcar como hecho'}"><input type="checkbox" data-ev-done="${ev.id}" ${ev.done ? 'checked' : ''} aria-label="Hecho"></label>
+    <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${esc(ev.all_day ? 'Todo el día' : timeOf(d))}</span>
+    <div><b>${esc(ev.title)}</b><div class="info"><span class="badge event">Evento</span>${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}</div></div>
+  </div>`;
 }
 document.addEventListener('change', (e) => {
   if (e.target.id === 'toggle-classes') {
@@ -1444,7 +1476,7 @@ const EVENT_COLORS = ['#7461a6', '#3a7aa6', '#2e8a8a', '#3f8c66', '#e0a43a', '#e
  */
 function eventCard(ev, { editable = false, showDate = false } = {}) {
   const attr = editable ? `data-edit-event="${ev.id}"` : `data-event="${ev.id}"`;
-  return `<article class="card event-card" ${attr} style="--c:${ev.color}">
+  return `<article class="card event-card ${ev.done ? 'done' : ''}" ${attr} style="--c:${ev.color}">
     <span class="ev-icon">${icon('event')}</span>
     <div class="body">
       <div class="meta">
@@ -2654,7 +2686,7 @@ function mergeDayClasses(classes) {
 }
 
 /** Detalle de un día: clases + tareas/exámenes. */
-function dayDetail(key, inModal) {
+function dayDetail(key, inModal, extra = '') {
     const date = parseKey(key);
     const dayTT = activeTT();
     const classes = classesOnDate(dayTT, date);
@@ -2671,6 +2703,7 @@ function dayDetail(key, inModal) {
       ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       <div class="group-title">Tareas y exámenes</div>
       ${items.length ? `<div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : '<p class="hint">Nada pendiente para este día.</p>'}
+      ${extra}
       <div class="modal-foot day-actions">
         <button class="btn btn-primary" data-action="newItem" data-type="task" data-date="${key}">${icon('plus')}Tarea</button>
         <button class="btn btn-exam" data-action="newItem" data-type="exam" data-date="${key}">${icon('plus')}Examen</button>

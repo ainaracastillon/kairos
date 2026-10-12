@@ -115,7 +115,7 @@ const fmtEntry = (e) => ({ id: e.id, slot_id: e.slot_id, day: e.day, subject_id:
 const fmtEvent = (e) => ({
   id: e.id, timetable_id: e.timetable_id, title: e.title, location: e.location, description: e.description, color: e.color,
   all_day: Boolean(e.all_day), start_at: e.start_at, end_at: e.end_at || null,
-  reminder_minutes: e.reminder_minutes ?? null, reminder_sent: Boolean(e.reminder_sent),
+  reminder_minutes: e.reminder_minutes ?? null, reminder_sent: Boolean(e.reminder_sent), done: Boolean(e.done),
 });
 const fmtItem = (i, checklist) => ({
   id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description,
@@ -142,6 +142,7 @@ async function main() {
   }
   await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
   for (const col of ['start_date TEXT', 'end_date TEXT']) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
+  await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
@@ -1170,6 +1171,11 @@ async function main() {
       [d.timetable_id, d.title, d.location, d.description, d.color, d.all_day, d.start_at, d.end_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, prev.id]);
     await placeEvents(uid);
     return fmtEvent(await db.get('SELECT * FROM events WHERE id = ?', [prev.id]));
+  });
+  route('PUT', '/events/:id/done', async ({ uid, body, params }) => {
+    const r = await db.run('UPDATE events SET done = ? WHERE id = ? AND user_id = ?', [bool(body.done), Number(params.id), uid]);
+    if (!r.changes) throw notFound('Evento no encontrado');
+    return fmtEvent(await db.get('SELECT * FROM events WHERE id = ?', [Number(params.id)]));
   });
   route('DELETE', '/events/:id', async ({ uid, params }) => {
     const r = await db.run('DELETE FROM events WHERE id = ? AND user_id = ?', [Number(params.id), uid]);

@@ -68,7 +68,7 @@ async function itemReminders(db, appUrl) {
 
 async function eventReminders(db, appUrl) {
   const now = Date.now();
-  const rows = await db.all('SELECT * FROM events WHERE reminder_sent = 0 AND reminder_minutes IS NOT NULL');
+  const rows = await db.all('SELECT * FROM events WHERE reminder_sent = 0 AND reminder_minutes IS NOT NULL AND done = 0');
   for (const ev of rows) {
     const start = new Date(ev.start_at).getTime();
     if (start - ev.reminder_minutes * 60000 > now) continue;
@@ -96,7 +96,7 @@ async function digests(db, appUrl) {
     const until = new Date(Date.now() + 7 * 86400000).toISOString();
     const items = await db.all(`SELECT i.*, s.name AS subject_name FROM items i LEFT JOIN subjects s ON s.id = i.subject_id
       WHERE i.user_id = ? AND i.done = 0 AND i.due_at <= ? ORDER BY i.due_at`, [user.id, until]);
-    const events = await db.all('SELECT * FROM events WHERE user_id = ? AND start_at >= ? AND start_at <= ? ORDER BY start_at', [user.id, new Date().toISOString(), until]);
+    const events = await db.all('SELECT * FROM events WHERE user_id = ? AND done = 0 AND start_at >= ? AND start_at <= ? ORDER BY start_at', [user.id, new Date().toISOString(), until]);
     if (!items.length && !events.length) continue;
     const now = new Date().toISOString();
     const lines = [
