@@ -118,7 +118,7 @@ const fmtEvent = (e) => ({
   reminder_minutes: e.reminder_minutes ?? null, reminder_sent: Boolean(e.reminder_sent), done: Boolean(e.done),
 });
 const fmtItem = (i, checklist) => ({
-  id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description,
+  id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description, room: i.room || '',
   due_at: i.due_at, reminder_minutes: i.reminder_minutes ?? null, reminder_sent: Boolean(i.reminder_sent), done: Boolean(i.done),
   checklist: checklist.map((c) => ({ id: c.id, text: c.text, done: Boolean(c.done) })),
 });
@@ -143,6 +143,7 @@ async function main() {
   await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
   for (const col of ['start_date TEXT', 'end_date TEXT']) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
   await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
+  await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
@@ -1055,6 +1056,7 @@ async function main() {
       type: has('type') ? (body.type === 'exam' ? 'exam' : 'task') : prev?.type ?? 'task',
       title: has('title') ? str(body.title, 300) : prev?.title,
       description: has('description') ? String(body.description ?? '').slice(0, 20000) : prev?.description ?? '',
+      room: has('room') ? str(body.room, 60) : prev?.room ?? '',
       subject_id: has('subject_id') ? (body.subject_id ? Number(body.subject_id) : null) : prev?.subject_id ?? null,
       timetable_id: has('timetable_id') ? Number(body.timetable_id) : prev?.timetable_id,
       due_at: has('due_at') ? isoDate(body.due_at, 'La fecha') : prev?.due_at,
@@ -1079,9 +1081,9 @@ async function main() {
   route('POST', '/items', async ({ uid, body }) => {
     const d = await itemData(uid, body);
     const id = await db.tx(async (q) => {
-      const r = await q.run(`INSERT INTO items (user_id, timetable_id, subject_id, type, title, description, due_at, reminder_minutes, reminder_sent, done, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id`,
-      [uid, d.timetable_id, d.subject_id, d.type, d.title, d.description, d.due_at, d.reminder_minutes, d.done, nowIso()]);
+      const r = await q.run(`INSERT INTO items (user_id, timetable_id, subject_id, type, title, description, room, due_at, reminder_minutes, reminder_sent, done, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id`,
+      [uid, d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.due_at, d.reminder_minutes, d.done, nowIso()]);
       if (Array.isArray(body.checklist)) await saveChecklist(q, r.id, body.checklist);
       return r.id;
     });
@@ -1094,8 +1096,8 @@ async function main() {
     // Si cambia la fecha o el aviso, se vuelve a avisar.
     const resend = d.due_at !== prev.due_at || d.reminder_minutes !== (prev.reminder_minutes ?? null);
     await db.tx(async (q) => {
-      await q.run('UPDATE items SET timetable_id = ?, subject_id = ?, type = ?, title = ?, description = ?, due_at = ?, reminder_minutes = ?, reminder_sent = ?, done = ? WHERE id = ?',
-        [d.timetable_id, d.subject_id, d.type, d.title, d.description, d.due_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, d.done, prev.id]);
+      await q.run('UPDATE items SET timetable_id = ?, subject_id = ?, type = ?, title = ?, description = ?, room = ?, due_at = ?, reminder_minutes = ?, reminder_sent = ?, done = ? WHERE id = ?',
+        [d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.due_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, d.done, prev.id]);
       if (Array.isArray(body.checklist)) await saveChecklist(q, prev.id, body.checklist);
     });
     return itemOut(prev.id);

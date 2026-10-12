@@ -870,7 +870,7 @@ function dayItemRow(item, withDate = false, checkable = false) {
   return `<div class="day-class day-item ${item.type}" style="--c:${s ? s.color : 'var(--muted)'}">
     ${checkable ? `<label class="ev-check" title="Marcar como hecha"><input type="checkbox" data-toggle="${item.id}" aria-label="Marcar como hecha"></label>` : ''}
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
-    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
     ${item.description.trim() ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción" aria-label="Ver la descripción">${icon('eye')}</button>` : ''}
   </div>`;
 }
@@ -1521,6 +1521,7 @@ function openItemView(item) {
       ${row('calendar', esc(cap(d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }))))}
       ${row('clock', esc(timeOf(d)))}
       ${s ? row('book', esc(subjectLabel(s))) : ''}
+      ${item.room ? row('pin', `Aula ${esc(item.room)}`) : ''}
     </div>
     <h3 class="ev-notes-title">Descripción</h3>
     <div class="ev-notes">${esc(item.description)}</div>
@@ -1702,6 +1703,7 @@ function itemCard(item) {
         <span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>
         ${s ? `<span><span class="dot" style="--c:${s.color}"></span> ${esc(subjectLabel(s))}</span>` : ''}
         <span>${icon('clock')}${esc(fmtDateTime(d))}</span>
+        ${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}
         <span class="${overdue ? 'overdue' : ''}">${overdue ? 'Vencida ' : ''}${esc(relative(d))}</span>
         ${item.reminder_minutes !== null ? `<span title="Aviso: ${esc(rem ? rem[1] : `${item.reminder_minutes} min antes`)}">${item.reminder_sent ? icon('sent') : icon('bell')}</span>` : ''}
       </div>
@@ -2850,6 +2852,7 @@ function openItemModal(item, defaults = {}) {
     type: item?.type || defaults.type || 'task',
     title: item?.title || '',
     description: item?.description || '',
+    room: item?.room || '',
     subject_id: item?.subject_id ?? null,
     date: due ? dateKey(due) : defaults.date || dateKey(new Date()),
     time: due ? timeOf(due) : '09:00',
@@ -2880,6 +2883,7 @@ function openItemModal(item, defaults = {}) {
         <label class="field"><span>Fecha</span><input type="date" name="date" value="${data.date}" required></label>
         <label class="field"><span>Hora</span><input type="time" name="time" value="${data.time}" required></label>
       </div>
+      <label class="field" id="room-field"><span>Aula</span><input type="text" name="room" value="${esc(data.room)}" maxlength="60" placeholder="Ej.: B-12"></label>
       <label class="field"><span>Aviso</span>
         <select name="reminder">${REMINDERS.map(([v, l]) => `<option value="${v ?? ''}" ${v === data.reminder_minutes ? 'selected' : ''}>${l}</option>`).join('')}</select>
         ${state.user.email_notifications || state.pushDevices ? '' : '<small class="hint">No tienes activado ningún aviso. Actívalos en Ajustes, por correo o con notificaciones.</small>'}
@@ -2902,7 +2906,14 @@ function openItemModal(item, defaults = {}) {
       data.type = t;
       $$('#type-seg button', form).forEach((b) => b.classList.toggle('active', b.dataset.type === t));
       $('#item-heading', form).textContent = isNew ? (t === 'exam' ? 'Nuevo examen' : 'Nueva tarea') : t === 'exam' ? 'Editar examen' : 'Editar tarea';
+      $('#room-field', form).style.display = t === 'exam' ? '' : 'none';
     };
+    // El aula propone la de la asignatura elegida.
+    const syncRoomHint = () => {
+      const subj = form.subject_id.value ? subjectById(Number(form.subject_id.value)) : null;
+      form.room.placeholder = subj && effRoom(subj) ? `Ej.: ${effRoom(subj)} (aula de ${subj.name})` : 'Ej.: B-12';
+    };
+
     setType(data.type);
     $('#type-seg', form).onclick = (e) => { const b = e.target.closest('button'); if (b) setType(b.dataset.type); };
 
@@ -2961,6 +2972,7 @@ function openItemModal(item, defaults = {}) {
       $('#subj-name', form).textContent = list.length
         ? subjectLabel(current) || 'Sin asignatura'
         : `«${tt.name}» aún no tiene asignaturas. Créalas en la pestaña Asignaturas.`;
+      syncRoomHint();
     };
     renderChips();
     $('#subj-chips', form).onclick = (e) => {
@@ -2998,6 +3010,7 @@ function openItemModal(item, defaults = {}) {
         title: form.title.value,
         description: form.description.value,
         subject_id: form.subject_id.value ? Number(form.subject_id.value) : null,
+        room: data.type === 'exam' ? form.room.value.trim() : '',
         timetable_id: tt.id,
         due_at: new Date(`${form.date.value}T${form.time.value}`).toISOString(),
         reminder_minutes: form.reminder.value === '' ? null : Number(form.reminder.value),
