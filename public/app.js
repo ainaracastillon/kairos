@@ -882,10 +882,11 @@ function monthLists(items, events, monthTitle) {
   const tasks = pending.filter((i) => i.type === 'task');
   const exams = pending.filter((i) => i.type === 'exam');
   const evs = events.filter((ev) => !ev.done).sort((a, b) => a.start_at.localeCompare(b.start_at));
-  const block = (title, cls, list, row, empty) => `<div class="month-list ${cls}">
-    <div class="group-title">${title} <span class="count">${list.filter((x) => !x.done).length || ''}</span></div>
-    ${list.length ? `<div class="day-classes">${list.map(row).join('')}</div>` : `<p class="hint">${empty}</p>`}
-  </div>`;
+  // Los apartados vacíos no se muestran.
+  const block = (title, cls, list, row) => (list.length ? `<div class="month-list ${cls}">
+    <div class="group-title">${title} <span class="count">${list.length}</span></div>
+    <div class="day-classes">${list.map(row).join('')}</div>
+  </div>` : '');
   return `<div class="month-lists-inner">
     ${block(`Tareas de ${esc(month)}`, 'tasks', tasks, (i) => dayItemRow(i, true, true), 'No hay tareas pendientes este mes.')}
     ${block(`Exámenes de ${esc(month)}`, 'exams', exams, (i) => dayItemRow(i, true), 'No hay exámenes este mes.')}
@@ -2697,15 +2698,14 @@ function dayDetail(key, inModal, extra = '') {
     const dayEvents = ttEvents(dayTT.id).filter((ev) => !ev.done && eventDayKeys(ev).includes(key));
     return `
       <div class="modal-head"><h2>${esc(cap(fmtLongDate(date)))}</h2>${inModal ? `<button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button>` : ''}</div>
-      <div class="group-title" style="margin-top:0">Clases</div>
-      ${classes.length ? `<div class="day-classes">${mergeDayClasses(classes).map(({ start, end, subject, room }) => `
+      ${classes.length ? `<div class="group-title" style="margin-top:0">Clases</div><div class="day-classes">${mergeDayClasses(classes).map(({ start, end, subject, room }) => `
         <div class="day-class" style="--c:${subject.color}">
           <span class="time">${start} – ${end}</span>
           <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
-        </div>`).join('')}</div>` : '<p class="hint">Este día no tienes clases.</p>'}
+        </div>`).join('')}</div>` : ''}
       ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
-      ${inModal ? `<div class="group-title">Tareas y exámenes</div>
-      ${items.length ? `<div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : '<p class="hint">Nada pendiente para este día.</p>'}` : ''}
+      ${inModal && items.length ? `<div class="group-title">Tareas y exámenes</div><div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : ''}
+      ${inModal && !classes.length && !dayEvents.length && !items.length ? '<p class="hint">Nada para este día.</p>' : ''}
       ${extra}
       <div class="modal-foot day-actions">
         <button class="btn btn-primary" data-action="newItem" data-type="task" data-date="${key}">${icon('plus')}Tarea</button>
