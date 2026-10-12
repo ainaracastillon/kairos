@@ -634,6 +634,8 @@ function bindViewEvents(root) {
     if (act) { e.stopPropagation(); return ACTIONS[act.dataset.action]?.(act.dataset, returnTo); }
     const edit = t.closest('[data-edit]');
     if (edit) { e.stopPropagation(); return openItemModal(itemById(Number(edit.dataset.edit)), { returnTo }); }
+    const itemView = t.closest('[data-view-item]');
+    if (itemView) { e.stopPropagation(); return openItemView(itemById(Number(itemView.dataset.viewItem))); }
     const evEdit = t.closest('[data-edit-event]');
     if (evEdit) { e.stopPropagation(); return openEventModal(eventById(Number(evEdit.dataset.editEvent)), { returnTo }); }
     const evEl = t.closest('[data-event]');
@@ -868,7 +870,8 @@ function dayItemRow(item, withDate = false, checkable = false) {
   return `<div class="day-class day-item ${item.type}" style="--c:${s ? s.color : 'var(--muted)'}">
     ${checkable ? `<label class="ev-check" title="Marcar como hecha"><input type="checkbox" data-toggle="${item.id}" aria-label="Marcar como hecha"></label>` : ''}
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
-    <div><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+    ${item.description.trim() ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción" aria-label="Ver la descripción">${icon('eye')}</button>` : ''}
   </div>`;
 }
 
@@ -897,10 +900,11 @@ function monthLists(items, events, monthTitle) {
 /** Evento en la lista del mes: se puede marcar como hecho; al pulsarlo, se ven sus detalles. */
 function monthEventRow(ev) {
   const d = new Date(ev.start_at);
-  return `<div class="day-class day-item ev-row-month ${ev.done ? 'done' : ''}" data-event="${ev.id}" style="--c:${ev.color}">
+  return `<div class="day-class day-item ev-row-month ${ev.done ? 'done' : ''}" style="--c:${ev.color}">
     <label class="ev-check" title="${ev.done ? 'Marcar como pendiente' : 'Marcar como hecho'}"><input type="checkbox" data-ev-done="${ev.id}" ${ev.done ? 'checked' : ''} aria-label="Hecho"></label>
     <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${esc(ev.all_day ? 'Todo el día' : timeOf(d))}</span>
-    <div><b>${esc(ev.title)}</b><div class="info"><span class="badge event">Evento</span>${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}</div></div>
+    <div class="grow"><b>${esc(ev.title)}</b><div class="info"><span class="badge event">Evento</span>${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}</div></div>
+    ${ev.description.trim() ? `<button type="button" class="icon-btn row-eye" data-event="${ev.id}" title="Ver las notas" aria-label="Ver las notas">${icon('eye')}</button>` : ''}
   </div>`;
 }
 document.addEventListener('change', (e) => {
@@ -1503,6 +1507,24 @@ function eventDateLabel(ev) {
   const s = new Date(ev.start_at);
   const e = ev.end_at ? new Date(ev.end_at) : null;
   return e && dateKey(e) !== dateKey(s) ? `${fmt(s)} – ${fmt(e)}` : fmt(s);
+}
+
+/** Ver una tarea o un examen con su descripción (solo lectura). */
+function openItemView(item) {
+  if (!item) return;
+  const s = subjectById(item.subject_id);
+  const d = new Date(item.due_at);
+  const row = (ic, html) => `<div class="ev-row">${icon(ic)}<span>${html}</span></div>`;
+  openModal(`
+    <div class="modal-head"><div class="head-text"><h2>${esc(item.title)}</h2><small class="hint">${item.type === 'exam' ? 'Examen' : 'Tarea'}</small></div><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <div class="ev-view" style="--c:${s ? s.color : 'var(--muted)'}">
+      ${row('calendar', esc(cap(d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }))))}
+      ${row('clock', esc(timeOf(d)))}
+      ${s ? row('book', esc(subjectLabel(s))) : ''}
+    </div>
+    <h3 class="ev-notes-title">Descripción</h3>
+    <div class="ev-notes">${esc(item.description)}</div>
+    <div class="modal-foot"><button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
 }
 
 /** Ver un evento (detalles y notas). Para editarlo se usa la sección Eventos del menú. */
