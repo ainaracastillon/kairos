@@ -50,6 +50,7 @@ const ICONS = {
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  refresh: '<path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 5v6.5h-6.5"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff: '<path d="M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.4 3.2M6.6 6.6C4 8.3 2.5 12 2.5 12S6 18.5 12 18.5c1.9 0 3.5-.6 4.9-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17"/>',
   doc: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5M10 12.5h6M10 16.5h6"/>',
@@ -179,6 +180,7 @@ const state = {
   view: 'month',
   cursor: startOfMonth(new Date()),
   selectedDay: dateKey(new Date()),
+  ...restoredPlace(),
   showClasses: pref('showClasses', true),
   filter: { type: 'all', subject: '', showDone: pref('showDone', false) },
 };
@@ -519,6 +521,7 @@ function renderShell() {
       ${brand()}
       <nav class="tabs">${VIEWS.filter((v) => TAB_VIEWS.includes(v[0])).map(([id, ic, label, short]) => `<button data-view="${id}">${icon(ic)}<span class="long">${label}</span><span class="short">${short}</span></button>`).join('')}</nav>
       <div class="userbox">
+        <button class="icon-btn refresh-btn" id="refresh-btn" title="Actualizar" aria-label="Actualizar">${icon('refresh')}</button>
         <button class="user-btn" id="user-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" title="Tu cuenta">
           ${avatarHtml(state.user)}<span class="name">${esc(state.user.name)}</span>${icon('down')}
         </button>
@@ -557,6 +560,11 @@ function renderShell() {
   };
   document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.userbox')) setMenu(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { setMenu(false); menuBtn.focus(); } });
+  $('#refresh-btn').onclick = (e) => {
+    e.currentTarget.classList.add('spinning');
+    savePlace();
+    location.reload();
+  };
   const logoutBtn = $('#logout');
   if (logoutBtn) logoutBtn.onclick = async () => {
     await forgetThisDevice();
@@ -586,6 +594,9 @@ function renderView() {
   if (view === 'week') { fitTimetable(el); updateSelectBar(); }
   const newScroll = $('.scroll', el);
   if (newScroll && el.dataset.lastView === view) newScroll.scrollTop = scrollTop;
+  else if (newScroll && state.restoredScroll) { newScroll.scrollTop = state.restoredScroll; }
+  state.restoredScroll = 0;
+  savePlace();
   el.dataset.lastView = view;
 }
 window.addEventListener('hashchange', () => {
@@ -664,6 +675,23 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.ttSel && !$('#modal-root').innerHTML) { state.ttSel = null; renderView(); }
 });
 
+/* Al recargar, la app vuelve al mismo sitio: la vista va en la dirección (#…) y el mes y el día, aquí. */
+function restoredPlace() {
+  try {
+    const p = JSON.parse(sessionStorage.getItem('kairos-place') || 'null');
+    if (!p || !/^\d{4}-\d{2}-\d{2}$/.test(p.day || '') || !/^\d{4}-\d{2}$/.test(p.month || '')) return {};
+    const [y, m] = p.month.split('-').map(Number);
+    return { cursor: new Date(y, m - 1, 1), selectedDay: p.day, restoredScroll: Number(p.scroll) || 0 };
+  } catch { return {}; }
+}
+function savePlace() {
+  try {
+    const scroll = $('#view .scroll')?.scrollTop || 0;
+    sessionStorage.setItem('kairos-place', JSON.stringify({ month: `${state.cursor.getFullYear()}-${pad(state.cursor.getMonth() + 1)}`, day: state.selectedDay, scroll }));
+  } catch { /* sin almacenamiento */ }
+}
+window.addEventListener('pagehide', savePlace);
+
 function selectDay(key) {
   state.selectedDay = key;
   const d = parseKey(key);
@@ -715,9 +743,8 @@ function itemChip(item) {
   const d = new Date(item.due_at);
   const s = subjectById(item.subject_id);
   const doneCount = item.checklist.filter((c) => c.done).length;
-  return `<div class="chip-item ${item.type} ${item.done ? 'done' : ''}" data-edit="${item.id}" style="--c:${s ? s.color : 'var(--muted)'}"
+  return `<div class="chip-item ${item.type}" style="--c:${s ? s.color : 'var(--muted)'}"
       title="${esc(`${item.type === 'exam' ? 'Examen' : 'Tarea'}: ${item.title}${s ? ` (${s.name})` : ''} · ${timeOf(d)}`)}">
-    <input type="checkbox" data-toggle="${item.id}" ${item.done ? 'checked' : ''} aria-label="Marcar como hecha">
     <span class="t"><time>${timeOf(d)}</time>${esc(item.title)}</span>
     ${item.checklist.length ? `<span class="prog">${doneCount}/${item.checklist.length}</span>` : ''}
   </div>`;
@@ -748,7 +775,8 @@ function monthView() {
     const vis = week.filter((x) => days.includes(x.getDay()));
     if (vis.some((x) => x.getMonth() === m)) weeks.push(vis);
   }
-  const items = ttItems(tt.id);
+  // En el mes, las tareas y exámenes son solo informativos: los hechos no aparecen.
+  const items = ttItems(tt.id).filter((i) => !i.done);
   const byDay = new Map();
   for (const it of items) {
     const k = dateKey(new Date(it.due_at));
@@ -820,7 +848,25 @@ function monthView() {
       ${days.map((d) => `<div class="dow">${DAY_SHORT[d]}</div>`).join('')}
       ${cells.join('')}
     </div>
-    ${mobile ? `<section class="agenda">${dayDetail(state.selectedDay, false)}</section></div>` : ''}`;
+    ${mobile ? `<section class="agenda">${dayDetail(state.selectedDay, false)}${monthItemsSection(monthItems.filter((i) => !i.done), title)}</section></div>` : ''}`;
+}
+
+/** Tarea o examen solo para informar (sin casilla ni lista de pasos), con el aspecto de las clases. */
+function dayItemRow(item, withDate = false) {
+  const d = new Date(item.due_at);
+  const s = subjectById(item.subject_id);
+  const overdue = d < new Date();
+  return `<div class="day-class day-item ${item.type}" style="--c:${s ? s.color : 'var(--muted)'}">
+    <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
+    <div><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+  </div>`;
+}
+
+/** Todas las tareas y exámenes pendientes del mes, siempre visibles en Mes. */
+function monthItemsSection(list, monthTitle) {
+  const sorted = [...list].sort((a, b) => a.due_at.localeCompare(b.due_at));
+  return `<div class="group-title month-items-title">Pendiente en ${esc(monthTitle.toLowerCase())}</div>
+    ${sorted.length ? `<div class="day-classes">${sorted.map((i) => dayItemRow(i, true)).join('')}</div>` : '<p class="hint">No hay tareas ni exámenes pendientes este mes.</p>'}`;
 }
 document.addEventListener('change', (e) => {
   if (e.target.id === 'toggle-classes') {
@@ -2612,7 +2658,7 @@ function dayDetail(key, inModal) {
     const date = parseKey(key);
     const dayTT = activeTT();
     const classes = classesOnDate(dayTT, date);
-    const items = ttItems(dayTT.id).filter((i) => dateKey(new Date(i.due_at)) === key);
+    const items = ttItems(dayTT.id).filter((i) => !i.done && dateKey(new Date(i.due_at)) === key);
     const dayEvents = ttEvents(dayTT.id).filter((ev) => eventDayKeys(ev).includes(key));
     return `
       <div class="modal-head"><h2>${esc(cap(fmtLongDate(date)))}</h2>${inModal ? `<button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button>` : ''}</div>
@@ -2624,7 +2670,7 @@ function dayDetail(key, inModal) {
         </div>`).join('')}</div>` : `<p class="hint">${!ttCovers(dayTT, date) ? `«${esc(dayTT.name)}» no tiene clases en esta fecha.` : ttDays(dayTT).includes(date.getDay()) ? 'No hay clases este día.' : `Este día no está en «${esc(dayTT.name)}».`}</p>`}
       ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       <div class="group-title">Tareas y exámenes</div>
-      ${items.map(itemCard).join('') || '<p class="hint">Nada para este día.</p>'}
+      ${items.length ? `<div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : '<p class="hint">Nada pendiente para este día.</p>'}
       <div class="modal-foot day-actions">
         <button class="btn btn-primary" data-action="newItem" data-type="task" data-date="${key}">${icon('plus')}Tarea</button>
         <button class="btn btn-exam" data-action="newItem" data-type="exam" data-date="${key}">${icon('plus')}Examen</button>

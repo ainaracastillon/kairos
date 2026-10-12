@@ -823,3 +823,15 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .ev-row .i { width: 18px; height: 18px; color: var(--c); flex: none; margin-top: 2px; }
 .ev-notes-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-family: inherit; }
 .ev-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; font-size: 15px; padding: 2px 0 6px; }
+
+/* ---------- Actualizar ---------- */
+.refresh-btn { color: var(--muted); }
+.refresh-btn .i { width: 20px; height: 20px; }
+.refresh-btn.spinning .i { animation: kspin .8s linear infinite; }
+@keyframes kspin { to { transform: rotate(360deg); } }
+
+/* ---------- Tareas y exámenes informativos en Mes ---------- */
+.day-item .badge { font-size: 11px; padding: 1px 7px; }
+.day-item .overdue { color: var(--danger); font-weight: 600; }
+.day-item b { overflow-wrap: anywhere; }
+.month-items-title { margin-top: 26px; }
