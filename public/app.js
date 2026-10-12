@@ -491,6 +491,7 @@ const VIEWS = [
   ['week', 'grid', 'Horario', 'Horario'],
   ['items', 'check', 'Tareas y exámenes', 'Tareas'],
   ['subjects', 'book', 'Asignaturas', 'Materias'],
+  ['events', 'event', 'Eventos', 'Eventos'],
   ['settings', 'sliders', 'Ajustes', 'Ajustes'],
   ['account', 'user', 'Mi cuenta', 'Cuenta'],
   ['admin', 'shield', 'Administración', 'Admin'],
@@ -511,6 +512,7 @@ function renderShell() {
           <button role="menuitem" data-view="account">${icon('user')}Mi cuenta</button>
           ${state.user.is_admin ? `<button role="menuitem" data-view="admin">${icon('shield')}Administración</button>` : ''}
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
+          <button role="menuitem" data-view="events">${icon('event')}Eventos</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
@@ -561,7 +563,7 @@ function renderView() {
   const el = $('#view');
   const scrollEl = $('.scroll', el);
   const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
-  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, settings: settingsView, account: accountView, admin: adminView }[view]();
+  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, events: eventsView, settings: settingsView, account: accountView, admin: adminView }[view]();
   if (view === 'settings') bindSettings(el);
   if (view === 'account') bindAccount(el);
   if (view === 'admin') bindAdmin(el);
@@ -600,8 +602,10 @@ function bindViewEvents(root) {
     if (act) { e.stopPropagation(); return ACTIONS[act.dataset.action]?.(act.dataset, returnTo); }
     const edit = t.closest('[data-edit]');
     if (edit) { e.stopPropagation(); return openItemModal(itemById(Number(edit.dataset.edit)), { returnTo }); }
+    const evEdit = t.closest('[data-edit-event]');
+    if (evEdit) { e.stopPropagation(); return openEventModal(eventById(Number(evEdit.dataset.editEvent)), { returnTo }); }
     const evEl = t.closest('[data-event]');
-    if (evEl) { e.stopPropagation(); return openEventModal(eventById(Number(evEl.dataset.event)), { returnTo }); }
+    if (evEl) { e.stopPropagation(); return openEventView(eventById(Number(evEl.dataset.event)), { returnTo }); }
     const cell = t.closest('.day-cell');
     if (cell) return isMobile() ? selectDay(cell.dataset.date) : openDayModal(cell.dataset.date);
     const tt = t.closest('.tt-cell');
@@ -1368,21 +1372,85 @@ async function openDownloadModal() {
    ============================================================ */
 const EVENT_COLORS = ['#7461a6', '#3a7aa6', '#2e8a8a', '#3f8c66', '#e0a43a', '#e07b3c', '#c8553d', '#c45a74'];
 
-function eventCard(ev) {
-  return `<article class="card event-card" data-event="${ev.id}" style="--c:${ev.color}">
+/**
+ * Tarjeta de evento: solo hasta el título.
+ * - En el calendario: el ojo abre los detalles y las notas (sin editar).
+ * - En la sección Eventos (editable): el lápiz abre el editor.
+ */
+function eventCard(ev, { editable = false, showDate = false } = {}) {
+  const attr = editable ? `data-edit-event="${ev.id}"` : `data-event="${ev.id}"`;
+  const tt = state.timetables.length > 1 ? state.timetables.find((t) => t.id === ev.timetable_id) : null;
+  return `<article class="card event-card" ${attr} style="--c:${ev.color}">
     <span class="ev-icon">${icon('event')}</span>
     <div class="body">
       <div class="meta">
         <span class="badge event">Evento</span>
+        ${showDate ? `<span>${icon('calendar')}${esc(eventDateLabel(ev))}</span>` : ''}
         <span>${icon('clock')}${esc(eventTimeLabel(ev))}</span>
         ${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}
         ${ev.reminder_minutes !== null ? `<span title="Con aviso">${ev.reminder_sent ? icon('sent') : icon('bell')}</span>` : ''}
+        ${editable && tt ? `<span class="ev-tt">${esc(tt.name)}</span>` : ''}
       </div>
       <h3>${esc(ev.title)}</h3>
-      ${ev.description ? `<p class="desc">${esc(ev.description)}</p>` : ''}
     </div>
-    <button class="icon-btn" data-event="${ev.id}" title="Editar" aria-label="Editar">${icon('pencil')}</button>
+    ${editable
+      ? `<button class="icon-btn" data-edit-event="${ev.id}" title="Editar" aria-label="Editar evento">${icon('pencil')}</button>`
+      : `<button class="icon-btn" data-event="${ev.id}" title="Ver detalles y notas" aria-label="Ver detalles y notas">${icon('eye')}</button>`}
   </article>`;
+}
+
+function eventDateLabel(ev) {
+  const fmt = (d) => d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: new Date().getFullYear() === d.getFullYear() ? undefined : 'numeric' });
+  const s = new Date(ev.start_at);
+  const e = ev.end_at ? new Date(ev.end_at) : null;
+  return e && dateKey(e) !== dateKey(s) ? `${fmt(s)} – ${fmt(e)}` : fmt(s);
+}
+
+/** Ver un evento (detalles y notas). Para editarlo se usa la sección Eventos del menú. */
+function openEventView(ev, { returnTo } = {}) {
+  if (!ev) return;
+  const tt = state.timetables.find((t) => t.id === ev.timetable_id);
+  const rem = REMINDERS.find(([v]) => v === ev.reminder_minutes)?.[1];
+  const row = (ic, html) => `<div class="ev-row">${icon(ic)}<span>${html}</span></div>`;
+  openModal(`
+    <div class="modal-head"><div class="head-text"><h2>${esc(ev.title)}</h2>${state.timetables.length > 1 && tt ? `<small class="hint">${esc(tt.name)}</small>` : ''}</div><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <div class="ev-view" style="--c:${ev.color}">
+      ${row('calendar', esc(eventDateLabel(ev)))}
+      ${row('clock', esc(eventTimeLabel(ev)))}
+      ${ev.location ? row('pin', esc(ev.location)) : ''}
+      ${ev.reminder_minutes !== null ? row('bell', `${esc(rem || 'Con aviso')}${ev.reminder_sent ? ' · ya enviado' : ''}`) : ''}
+    </div>
+    <h3 class="ev-notes-title">Notas</h3>
+    ${ev.description ? `<div class="ev-notes">${esc(ev.description)}</div>` : '<p class="hint">Este evento no tiene notas.</p>'}
+    <div class="modal-foot">
+      ${returnTo ? `<button type="button" class="btn left" id="ev-back">${icon('left')}Volver al día</button>` : ''}
+      <button type="button" class="btn" id="ev-go-edit">${icon('pencil')}Editar en Eventos</button>
+      <button type="button" class="btn btn-primary" data-close>Cerrar</button>
+    </div>`, (root) => {
+    $('#ev-go-edit', root).onclick = () => { closeModal(); location.hash = 'events'; };
+    const back = $('#ev-back', root);
+    if (back) back.onclick = () => { closeModal(); openDayModal(returnTo); };
+  });
+}
+
+/* Sección Eventos (menú de la cuenta): todos los eventos, para editarlos. */
+function eventsView() {
+  const now = new Date();
+  const endOf = (ev) => new Date(ev.end_at || ev.start_at);
+  const all = [...state.events];
+  const upcoming = all.filter((ev) => endOf(ev) >= now || dateKey(endOf(ev)) === dateKey(now)).sort((a, b) => a.start_at.localeCompare(b.start_at));
+  const past = all.filter((ev) => !upcoming.includes(ev)).sort((a, b) => b.start_at.localeCompare(a.start_at));
+  const group = (title, list) => list.length ? `<h3 class="group-title">${title} <span class="count">${list.length}</span></h3><div class="ev-list">${list.map((ev) => eventCard(ev, { editable: true, showDate: true })).join('')}</div>` : '';
+  return `
+    <div class="toolbar">
+      <h2 class="view-title">Eventos</h2>
+      <span class="spacer"></span>
+      <button class="btn btn-event" data-action="newEvent">${icon('plus')}Nuevo evento</button>
+    </div>
+    <p class="hint view-hint">Todos tus eventos${state.timetables.length > 1 ? ' de todos los horarios' : ''}. Pulsa uno para editarlo o eliminarlo.</p>
+    <div class="scroll">
+      ${all.length ? `${group('Próximos', upcoming)}${group('Pasados', past)}` : '<div class="empty"><strong>Aún no tienes eventos</strong>Añade conferencias, excursiones, charlas o cualquier cita que no sea una clase.</div>'}
+    </div>`;
 }
 
 /** Crear (ev = null) o editar un evento. */

@@ -812,3 +812,14 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .auth.suspended .btn-primary { justify-content: center; text-decoration: none; }
 .auth.suspended .auth-secondary { margin-top: 10px; }
 .badge-role.suggested { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border: 1px dashed color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* ---------- Eventos: ver detalles y sección para editar ---------- */
+.view-title { font-size: 22px; margin: 0; }
+.event-card .ev-tt { font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.event-card .icon-btn { flex: none; }
+.ev-list { max-width: 860px; }
+.ev-view { display: grid; gap: 8px; padding: 12px 14px; border-left: 4px solid var(--c); border-radius: 10px; background: var(--surface-2); margin-bottom: 16px; }
+.ev-row { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+.ev-row .i { width: 18px; height: 18px; color: var(--c); flex: none; margin-top: 2px; }
+.ev-notes-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-family: inherit; }
+.ev-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; font-size: 15px; padding: 2px 0 6px; }
