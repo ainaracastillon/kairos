@@ -849,3 +849,4 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .ev-row-month.done { opacity: .7; }
 .ev-chip.done { opacity: .55; text-decoration: line-through; }
 .event-card.done h3 { text-decoration: line-through; color: var(--muted); }
+.event-card .ev-check { margin: -4px 0 -6px -4px; }
