@@ -1048,6 +1048,8 @@ function openTimetableModal(tt) {
           state.timetables = await api('PUT', `/timetables/${tt.id}`, body);
           toast('Horario guardado');
         }
+        // Los eventos se recolocan en el horario de su periodo.
+        state.events = await api('GET', '/events').catch(() => state.events);
         closeModal();
         if (location.hash !== '#week') location.hash = 'week';
         else renderView();
@@ -1379,7 +1381,6 @@ const EVENT_COLORS = ['#7461a6', '#3a7aa6', '#2e8a8a', '#3f8c66', '#e0a43a', '#e
  */
 function eventCard(ev, { editable = false, showDate = false } = {}) {
   const attr = editable ? `data-edit-event="${ev.id}"` : `data-event="${ev.id}"`;
-  const tt = state.timetables.length > 1 ? state.timetables.find((t) => t.id === ev.timetable_id) : null;
   return `<article class="card event-card" ${attr} style="--c:${ev.color}">
     <span class="ev-icon">${icon('event')}</span>
     <div class="body">
@@ -1389,7 +1390,6 @@ function eventCard(ev, { editable = false, showDate = false } = {}) {
         <span>${icon('clock')}${esc(eventTimeLabel(ev))}</span>
         ${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}
         ${ev.reminder_minutes !== null ? `<span title="Con aviso">${ev.reminder_sent ? icon('sent') : icon('bell')}</span>` : ''}
-        ${editable && tt ? `<span class="ev-tt">${esc(tt.name)}</span>` : ''}
       </div>
       <h3>${esc(ev.title)}</h3>
     </div>
@@ -1437,17 +1437,20 @@ function openEventView(ev, { returnTo } = {}) {
 function eventsView() {
   const now = new Date();
   const endOf = (ev) => new Date(ev.end_at || ev.start_at);
-  const all = [...state.events];
+  const tt = activeTT();
+  const all = ttEvents(tt.id);
+  const fmtD = (k) => parseKey(k).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  const period = tt.start_date && tt.end_date ? `del ${fmtD(tt.start_date)} al ${fmtD(tt.end_date)}` : tt.start_date ? `desde el ${fmtD(tt.start_date)}` : tt.end_date ? `hasta el ${fmtD(tt.end_date)}` : '';
   const upcoming = all.filter((ev) => endOf(ev) >= now || dateKey(endOf(ev)) === dateKey(now)).sort((a, b) => a.start_at.localeCompare(b.start_at));
   const past = all.filter((ev) => !upcoming.includes(ev)).sort((a, b) => b.start_at.localeCompare(a.start_at));
   const group = (title, list) => list.length ? `<h3 class="group-title">${title} <span class="count">${list.length}</span></h3><div class="ev-list">${list.map((ev) => eventCard(ev, { editable: true, showDate: true })).join('')}</div>` : '';
   return `
-    <div class="toolbar">
-      <h2 class="view-title">Eventos</h2>
+    <div class="toolbar tt-toolbar">
+      ${ttSwitcher()}
       <span class="spacer"></span>
-      <button class="btn btn-event" data-action="newEvent">${icon('plus')}Nuevo evento</button>
+      <button class="btn btn-event" data-action="newEvent">${icon('plus')}<span class="long">Nuevo evento</span><span class="short">Nuevo</span></button>
     </div>
-    <p class="hint view-hint">Todos tus eventos${state.timetables.length > 1 ? ' de todos los horarios' : ''}. Pulsa uno para editarlo o eliminarlo.</p>
+    <p class="hint view-hint">Eventos de este horario${period ? ` (${period})` : ''}. Pulsa uno para editarlo.</p>
     <div class="scroll">
       ${all.length ? `${group('Próximos', upcoming)}${group('Pasados', past)}` : '<div class="empty"><strong>Aún no tienes eventos</strong>Añade conferencias, excursiones, charlas o cualquier cita que no sea una clase.</div>'}
     </div>`;
@@ -1550,8 +1553,10 @@ function openEventModal(ev, defaults = {}) {
         reminder_minutes: form.reminder.value === '' ? null : Number(form.reminder.value),
       };
       try {
-        upsertEvent(isNew ? await api('POST', '/events', payload) : await api('PUT', `/events/${ev.id}`, payload));
-        toast(isNew ? 'Evento añadido' : 'Cambios guardados');
+        const saved = isNew ? await api('POST', '/events', payload) : await api('PUT', `/events/${ev.id}`, payload);
+        upsertEvent(saved);
+        const home = saved.timetable_id !== tt.id ? state.timetables.find((t) => t.id === saved.timetable_id) : null;
+        toast(home ? `Guardado en «${home.name}», que es el horario de esa fecha` : isNew ? 'Evento añadido' : 'Cambios guardados');
         finish();
       } catch (ex) {
         err.textContent = ex.message;

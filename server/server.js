@@ -882,6 +882,7 @@ async function main() {
       const id = await createTimetable(q, uid, data, copyFrom);
       await q.run('UPDATE users SET active_timetable_id = ? WHERE id = ?', [id, uid]);
     });
+    await placeEvents(uid);
     return fullTimetables(uid);
   });
 
@@ -899,6 +900,7 @@ async function main() {
     if (next.start_date && next.end_date && next.end_date < next.start_date) throw bad('La fecha final debe ser posterior a la inicial');
     await db.run('UPDATE timetables SET name = ?, start_date = ?, end_date = ?, visible_days = ?, background = ? WHERE id = ?',
       [next.name, next.start_date, next.end_date, next.visible_days, next.background, tt.id]);
+    if (next.start_date !== tt.start_date || next.end_date !== tt.end_date) await placeEvents(uid);
     return timetablesOut(uid);
   });
 
@@ -1127,12 +1129,32 @@ async function main() {
     await ownTimetable(uid, d.timetable_id);
     return d;
   }
+  /**
+   * Cada evento pertenece al horario cuyo periodo (fecha de inicio y fin) incluye su fecha.
+   * Si varios lo incluyen, se respeta el que ya tenía; si ninguno, se queda donde estaba.
+   */
+  async function placeEvents(uid) {
+    const tts = (await listTimetables(uid)).filter((t) => t.start_date || t.end_date);
+    if (!tts.length) return;
+    const u = await getUser(uid);
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: validTimezone(u?.timezone) ? u.timezone : 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const covers = (t, key) => (!t.start_date || t.start_date <= key) && (!t.end_date || key <= t.end_date);
+    for (const ev of await db.all('SELECT id, timetable_id, start_at FROM events WHERE user_id = ?', [uid])) {
+      const key = fmt.format(new Date(ev.start_at));
+      const fits = tts.filter((t) => covers(t, key));
+      if (fits.length && !fits.some((t) => t.id === ev.timetable_id)) {
+        await db.run('UPDATE events SET timetable_id = ? WHERE id = ?', [fits[0].id, ev.id]);
+      }
+    }
+  }
+
   route('GET', '/events', ({ uid }) => listEvents(uid));
   route('POST', '/events', async ({ uid, body }) => {
     const d = await eventData(uid, body);
     const r = await db.run(`INSERT INTO events (user_id, timetable_id, title, location, description, color, all_day, start_at, end_at, reminder_minutes, reminder_sent, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?) RETURNING id`,
     [uid, d.timetable_id, d.title, d.location, d.description, d.color, d.all_day, d.start_at, d.end_at, d.reminder_minutes, nowIso()]);
+    await placeEvents(uid);
     return fmtEvent(await db.get('SELECT * FROM events WHERE id = ?', [r.id]));
   });
   route('PUT', '/events/:id', async ({ uid, body, params }) => {
@@ -1142,6 +1164,7 @@ async function main() {
     const resend = d.start_at !== prev.start_at || d.reminder_minutes !== (prev.reminder_minutes ?? null);
     await db.run('UPDATE events SET timetable_id = ?, title = ?, location = ?, description = ?, color = ?, all_day = ?, start_at = ?, end_at = ?, reminder_minutes = ?, reminder_sent = ? WHERE id = ?',
       [d.timetable_id, d.title, d.location, d.description, d.color, d.all_day, d.start_at, d.end_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, prev.id]);
+    await placeEvents(uid);
     return fmtEvent(await db.get('SELECT * FROM events WHERE id = ?', [prev.id]));
   });
   route('DELETE', '/events/:id', async ({ uid, params }) => {
@@ -1281,6 +1304,11 @@ async function main() {
 
   startReminders(db, () => appUrl(null));
   // Las personas que usan Kairos sin cuenta y llevan un año sin entrar se borran (se avisa en la política de privacidad).
+  // Coloca los eventos ya existentes en el horario de su periodo (una vez al arrancar).
+  (async () => {
+    for (const { user_id } of await db.all('SELECT DISTINCT user_id FROM events')) await placeEvents(user_id).catch(() => {});
+  })().catch(() => {});
+
   const cleanGuests = async () => {
     const limit = new Date(Date.now() - GUEST_MAX_IDLE_DAYS * 86400000).toISOString();
     const old = await db.all('SELECT id FROM users WHERE is_guest = 1 AND COALESCE(last_seen_at, created_at) < ?', [limit]);
