@@ -2702,7 +2702,7 @@ function dayDetail(key, inModal, extra = '') {
         <div class="day-class" style="--c:${subject.color}">
           <span class="time">${start} – ${end}</span>
           <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
-        </div>`).join('')}</div>` : `<p class="hint">${!ttCovers(dayTT, date) ? `«${esc(dayTT.name)}» no tiene clases en esta fecha.` : ttDays(dayTT).includes(date.getDay()) ? 'No hay clases este día.' : `Este día no está en «${esc(dayTT.name)}».`}</p>`}
+        </div>`).join('')}</div>` : '<p class="hint">Este día no tienes clases.</p>'}
       ${dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       ${inModal ? `<div class="group-title">Tareas y exámenes</div>
       ${items.length ? `<div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : '<p class="hint">Nada pendiente para este día.</p>'}` : ''}
