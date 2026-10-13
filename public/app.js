@@ -1567,7 +1567,7 @@ function eventsView() {
   const period = tt.start_date && tt.end_date ? `del ${fmtD(tt.start_date)} al ${fmtD(tt.end_date)}` : tt.start_date ? `desde el ${fmtD(tt.start_date)}` : tt.end_date ? `hasta el ${fmtD(tt.end_date)}` : '';
   const upcoming = all.filter((ev) => endOf(ev) >= now || dateKey(endOf(ev)) === dateKey(now)).sort((a, b) => a.start_at.localeCompare(b.start_at));
   const past = all.filter((ev) => !upcoming.includes(ev)).sort((a, b) => b.start_at.localeCompare(a.start_at));
-  const group = (title, list) => list.length ? `<h3 class="group-title">${title} <span class="count">${list.length}</span></h3><div class="ev-list">${list.map((ev) => eventCard(ev, { editable: true, showDate: true })).join('')}</div>` : '';
+  const group = (title, list) => list.length ? `<h3 class="group-title">${title} <span class="count">${list.length}</span></h3><div class="ev-list card-grid">${list.map((ev) => eventCard(ev, { editable: true, showDate: true })).join('')}</div>` : '';
   return `
     <div class="toolbar tt-toolbar">
       ${ttSwitcher()}
@@ -1739,7 +1739,7 @@ function itemsView() {
   if (f.showDone) groups.push(['Completadas', list.filter((i) => i.done).reverse()]);
   const body = groups
     .filter(([, items]) => items.length)
-    .map(([title, items, cls]) => `<div class="group-title ${cls || ''}">${title} <span>(${items.length})</span></div>${items.map(itemCard).join('')}`)
+    .map(([title, items, cls]) => `<div class="group-title ${cls || ''}">${title} <span>(${items.length})</span></div><div class="card-grid">${items.map(itemCard).join('')}</div>`)
     .join('');
   const opt = (s, indent) => `<option value="${s.id}" ${String(s.id) === f.subject ? 'selected' : ''}>${indent ? '\u00a0\u00a0\u00a0↳ ' : ''}${esc(s.name)}</option>`;
   return `
@@ -2088,6 +2088,15 @@ const APPEARANCE_CARD = () => {
             <span class="theme-prev ${t.mode ? '' : 'auto'}"><span class="theme-card">Aa</span></span>
             <span class="theme-name">${esc(t.name)}${t.id === 'auto' ? '<small>Como tu móvil</small>' : ''}</span>
           </button>`).join('')}
+        ${(() => {
+          const custom = current.startsWith('custom:') ? current.slice(7) : null;
+          const p = custom && window.kairosTheme ? window.kairosTheme.preview(custom) : null;
+          return `<button type="button" class="theme-opt ${custom ? 'active' : ''}" id="theme-wheel" role="radio" aria-checked="${Boolean(custom)}"
+            style="${p ? `--tb:${p.bg};--ts:${p.surface};--tbd:${p.border};--tt:${p.text}` : ''}">
+            <span class="theme-prev ${p ? '' : 'wheel'}">${p ? '<span class="theme-card">Aa</span>' : ''}</span>
+            <span class="theme-name">${custom ? 'Tu color' : 'Elegir color'}<small>Ruleta de color</small></span>
+          </button>`;
+        })()}
       </div>
     </section>`;
 };
@@ -2096,6 +2105,7 @@ function bindAppearance(root) {
   const grid = $('#theme-grid', root);
   if (!grid) return;
   grid.onclick = async (e) => {
+    if (e.target.closest('#theme-wheel')) return openColorWheel();
     const b = e.target.closest('[data-theme-id]');
     if (!b) return;
     const id = b.dataset.themeId;
@@ -2104,6 +2114,95 @@ function bindAppearance(root) {
     const r = await attempt(() => api('PUT', '/me/settings', { theme: id }));
     if (r) state.user = r.user;
   };
+}
+
+/* ---------- Ruleta de color para el fondo ---------- */
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return `#${[f(0), f(8), f(4)].map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`;
+}
+function hexToHsl(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.substr(i, 2), 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h *= 60;
+  }
+  return [h, s * 100, l * 100];
+}
+
+function openColorWheel() {
+  const before = window.kairosTheme?.current() || 'auto';
+  const start = before.startsWith('custom:') ? before.slice(7) : '#f3dbe4';
+  let [h, s, l] = hexToHsl(start);
+  let saved = false;
+  openModal(`
+    <div class="modal-head"><h2>Elige tu color de fondo</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <p class="hint" style="margin-top:0">Mueve el punto por la ruleta y ajusta la luminosidad. La letra se pondrá en negro o en blanco para que siempre se lea bien.</p>
+    <div class="wheel-wrap">
+      <div class="color-wheel" id="cw"><span class="cw-dot" id="cw-dot"></span></div>
+      <div class="cw-side">
+        <div class="cw-preview" id="cw-prev"><b>Así se verá</b><span>Tu horario, tus tareas…</span><i id="cw-card">Aa</i></div>
+        <label class="field"><span>Luminosidad</span><input type="range" id="cw-l" min="4" max="97" step="1"></label>
+        <label class="field"><span>Código</span><input type="text" id="cw-hex" maxlength="7" spellcheck="false"></label>
+      </div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" id="cw-cancel">Cancelar</button><button type="button" class="btn btn-primary" id="cw-ok">Usar este color</button></div>`, (root) => {
+    const wheel = $('#cw', root), dot = $('#cw-dot', root), range = $('#cw-l', root), hexIn = $('#cw-hex', root), prev = $('#cw-prev', root);
+    const hex = () => hslToHex(h, s, l);
+    const paint = (fromHex = false) => {
+      const c = hex();
+      const rad = (h - 90) * (Math.PI / 180);
+      dot.style.left = `${50 + Math.cos(rad) * (s / 2)}%`;
+      dot.style.top = `${50 + Math.sin(rad) * (s / 2)}%`;
+      dot.style.background = c;
+      wheel.style.setProperty('--l', `${l}%`);
+      range.value = Math.round(l);
+      range.style.setProperty('--h', h);
+      range.style.setProperty('--s', `${s}%`);
+      if (!fromHex) hexIn.value = c;
+      const p = window.kairosTheme.preview(c);
+      prev.style.background = p.bg; prev.style.color = p.text; prev.style.borderColor = p.border;
+      $('#cw-card', root).style.cssText = `background:${p.surface};border-color:${p.border};color:${p.text}`;
+      window.kairosTheme.apply(`custom:${c}`); // se ve en toda la app mientras eliges
+    };
+    const pick = (e) => {
+      const r = wheel.getBoundingClientRect();
+      const x = e.clientX - r.left - r.width / 2, y = e.clientY - r.top - r.height / 2;
+      h = (Math.atan2(y, x) * 180) / Math.PI + 90;
+      if (h < 0) h += 360;
+      s = Math.min(100, (Math.hypot(x, y) / (r.width / 2)) * 100);
+      paint();
+    };
+    wheel.addEventListener('pointerdown', (e) => { wheel.setPointerCapture(e.pointerId); pick(e); });
+    wheel.addEventListener('pointermove', (e) => { if (wheel.hasPointerCapture(e.pointerId)) pick(e); });
+    range.oninput = () => { l = Number(range.value); paint(); };
+    hexIn.oninput = () => {
+      const v = hexIn.value.trim().toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(v)) { [h, s, l] = hexToHsl(v); paint(true); }
+    };
+    const restore = () => { if (!saved) window.kairosTheme.apply(before); };
+    $('#cw-cancel', root).onclick = () => { restore(); closeModal(); };
+    $('[data-close]', root).addEventListener('click', restore);
+    root.parentElement.addEventListener('mousedown', (e) => { if (e.target === root.parentElement) restore(); });
+    $('#cw-ok', root).onclick = async () => {
+      const id = `custom:${hex()}`;
+      saved = true;
+      window.kairosTheme.apply(id);
+      closeModal();
+      const r = await attempt(() => api('PUT', '/me/settings', { theme: id }), 'Color de fondo guardado');
+      if (r) state.user = r.user;
+      renderView();
+    };
+    paint();
+  });
 }
 
 function guestAccountView() {

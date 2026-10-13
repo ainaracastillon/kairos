@@ -454,7 +454,11 @@ async function main() {
     const set = (col, v) => { sets.push(`${col} = ?`); vals.push(v); };
     if ('name' in body) { const n = str(body.name, 80); if (!n) throw bad('El nombre no puede estar vacío'); set('name', n); }
     if ('timezone' in body) { if (!validTimezone(body.timezone)) throw bad('Zona horaria no válida'); set('timezone', body.timezone); }
-    if ('theme' in body) { if (!THEMES.includes(body.theme)) throw bad('Apariencia no válida'); set('theme', body.theme); }
+    if ('theme' in body) {
+      const th = String(body.theme || '').toLowerCase();
+      if (!THEMES.includes(th) && !/^custom:#[0-9a-f]{6}$/.test(th)) throw bad('Apariencia no válida');
+      set('theme', th);
+    }
     if ('email_notifications' in body) {
       if (body.email_notifications && (await getUser(uid)).is_guest) throw bad('Crea una cuenta para recibir avisos por correo');
       set('email_notifications', bool(body.email_notifications));

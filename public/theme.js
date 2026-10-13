@@ -24,7 +24,27 @@
   var VARS = ['--bg', '--surface', '--surface-2', '--border', '--border-strong'];
   var KEY = 'kairos-theme';
 
+  /* ---- Color personalizado (elegido con la ruleta): «custom:#rrggbb» ---- */
+  function hexToRgb(h) { return [1, 3, 5].map(function (i) { return parseInt(h.substr(i, 2), 16); }); }
+  function rgbToHex(c) { return '#' + c.map(function (v) { return ('0' + Math.round(Math.max(0, Math.min(255, v))).toString(16)).slice(-2); }).join(''); }
+  function mix(a, b, w) { var x = hexToRgb(a), y = hexToRgb(b); return rgbToHex(x.map(function (v, i) { return v * (1 - w) + y[i] * w; })); }
+  function lum(h) {
+    var c = hexToRgb(h).map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function contrast(a, b) { var l1 = lum(a), l2 = lum(b); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
+  /** Con un fondo cualquiera: ¿se lee mejor la letra oscura o la blanca? */
+  function modeFor(bg) { return contrast(bg, '#1f2b30') >= contrast(bg, '#e8ecec') ? 'light' : 'dark'; }
+  function customTheme(hex) {
+    var mode = modeFor(hex);
+    return mode === 'light'
+      ? ['custom:' + hex, 'Personalizado', 'light', hex, mix(hex, '#ffffff', 0.78), mix(hex, '#000000', 0.04), mix(hex, '#000000', 0.11), mix(hex, '#000000', 0.2)]
+      : ['custom:' + hex, 'Personalizado', 'dark', hex, mix(hex, '#ffffff', 0.07), mix(hex, '#ffffff', 0.11), mix(hex, '#ffffff', 0.18), mix(hex, '#ffffff', 0.27)];
+  }
+
   function find(id) {
+    var m = /^custom:(#[0-9a-f]{6})$/i.exec(id || '');
+    if (m) return customTheme(m[1].toLowerCase());
     for (var i = 0; i < LIST.length; i++) if (LIST[i][0] === id) return LIST[i];
     return LIST[0];
   }
@@ -55,6 +75,8 @@
   window.kairosTheme = {
     list: LIST.map(function (t) { return { id: t[0], name: t[1], mode: t[2], bg: t[3], surface: t[4], border: t[6] }; }),
     apply: apply,
+    modeFor: modeFor,
+    preview: function (hex) { var t = customTheme(hex); return { mode: t[2], bg: t[3], surface: t[4], border: t[6], text: t[2] === 'dark' ? '#e8ecec' : '#1f2b30' }; },
     current: function () { return document.documentElement.getAttribute('data-theme') || 'auto'; },
   };
 })();
