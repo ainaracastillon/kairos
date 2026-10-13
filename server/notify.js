@@ -115,7 +115,23 @@ async function pushToUser(db, userId, payload) {
   return sent;
 }
 
+/** Al arrancar, comprueba en Brevo que el remitente configurado está verificado (solo deja una línea en el registro). */
+async function checkSender() {
+  if (!process.env.BREVO_API_KEY) return;
+  const from = parseFrom(MAIL_FROM).email.toLowerCase();
+  try {
+    const res = await fetch('https://api.brevo.com/v3/senders', { headers: { 'api-key': process.env.BREVO_API_KEY, Accept: 'application/json' } });
+    if (!res.ok) { console.log(`[correo] No se pudo comprobar el remitente en Brevo (${res.status})`); return; }
+    const { senders = [] } = await res.json();
+    const s = senders.find((x) => String(x.email).toLowerCase() === from);
+    const list = senders.map((x) => `${x.email}${x.active ? ' (verificado)' : ' (sin verificar)'}`).join(', ');
+    console.log(`[correo] Remitente ${from}: ${s ? (s.active ? 'VERIFICADO en Brevo' : 'en Brevo pero SIN VERIFICAR') : 'NO está dado de alta en Brevo'}. Remitentes en Brevo: ${list || 'ninguno'}`);
+  } catch (e) {
+    console.log('[correo] No se pudo comprobar el remitente en Brevo:', e.message);
+  }
+}
+
 /** A quién llegan los mensajes del formulario de contacto (nunca se muestra en la web). */
 const contactInbox = () => process.env.CONTACT_TO || parseFrom(MAIL_FROM).email;
 
-module.exports = { contactInbox, sendMail, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
+module.exports = { checkSender, contactInbox, sendMail, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };

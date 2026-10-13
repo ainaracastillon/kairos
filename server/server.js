@@ -153,6 +153,7 @@ async function main() {
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
+  notify.checkSender();
 
   /* ---------- consultas de apoyo ---------- */
   const getUser = (id) => db.get('SELECT * FROM users WHERE id = ?', [id]);
