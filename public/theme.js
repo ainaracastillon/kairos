@@ -35,11 +35,38 @@
   function contrast(a, b) { var l1 = lum(a), l2 = lum(b); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
   /** Con un fondo cualquiera: ¿se lee mejor la letra oscura o la blanca? */
   function modeFor(bg) { return contrast(bg, '#1f2b30') >= contrast(bg, '#e8ecec') ? 'light' : 'dark'; }
+  function rgbToHsl(hex) {
+    var c = hexToRgb(hex).map(function (v) { return v / 255; });
+    var max = Math.max(c[0], c[1], c[2]), min = Math.min(c[0], c[1], c[2]), l = (max + min) / 2, h = 0, s = 0;
+    if (max !== min) {
+      var d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      h = max === c[0] ? (c[1] - c[2]) / d + (c[1] < c[2] ? 6 : 0) : max === c[1] ? (c[2] - c[0]) / d + 2 : (c[0] - c[1]) / d + 4;
+      h *= 60;
+    }
+    return [h, s * 100, l * 100];
+  }
+  function hsl(h, s, l) {
+    s /= 100; l /= 100;
+    var k = function (n) { return (n + h / 30) % 12; };
+    var a = s * Math.min(l, 1 - l);
+    var f = function (n) { return l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); };
+    return rgbToHex([f(0) * 255, f(8) * 255, f(4) * 255]);
+  }
+  /*
+   * El color elegido se ajusta para que todo se lea bien: se conserva su tono, pero el fondo
+   * queda muy claro (letra negra) o muy oscuro (letra blanca). Así los colores de las asignaturas,
+   * los exámenes y los botones siguen teniendo buen contraste.
+   */
   function customTheme(hex) {
-    var mode = modeFor(hex);
-    return mode === 'light'
-      ? ['custom:' + hex, 'Personalizado', 'light', hex, mix(hex, '#ffffff', 0.78), mix(hex, '#000000', 0.04), mix(hex, '#000000', 0.11), mix(hex, '#000000', 0.2)]
-      : ['custom:' + hex, 'Personalizado', 'dark', hex, mix(hex, '#ffffff', 0.07), mix(hex, '#ffffff', 0.11), mix(hex, '#ffffff', 0.18), mix(hex, '#ffffff', 0.27)];
+    var p = rgbToHsl(hex), h = p[0], s = p[1];
+    var light = modeFor(hex) === 'light';
+    if (light) {
+      var sl = Math.min(s, 75);
+      return ['custom:' + hex, 'Personalizado', 'light', hsl(h, sl, 94), hsl(h, Math.min(s, 60), 98.5), hsl(h, sl * 0.8, 90.5), hsl(h, sl * 0.6, 85), hsl(h, sl * 0.5, 77)];
+    }
+    var sd = Math.min(s, 42);
+    return ['custom:' + hex, 'Personalizado', 'dark', hsl(h, sd, 8.5), hsl(h, sd, 12), hsl(h, sd, 15.5), hsl(h, sd * 0.85, 21), hsl(h, sd * 0.8, 27)];
   }
 
   function find(id) {
@@ -77,6 +104,8 @@
     apply: apply,
     modeFor: modeFor,
     preview: function (hex) { var t = customTheme(hex); return { mode: t[2], bg: t[3], surface: t[4], border: t[6], text: t[2] === 'dark' ? '#e8ecec' : '#1f2b30' }; },
+    /** Mismo tono, en su versión clara u oscura (lo que de verdad se usará de fondo). */
+    tone: function (hex, mode) { var p = rgbToHsl(hex); return mode === 'dark' ? hsl(p[0], Math.min(p[1], 42), 8.5) : hsl(p[0], Math.min(p[1], 75), 94); },
     current: function () { return document.documentElement.getAttribute('data-theme') || 'auto'; },
   };
 })();

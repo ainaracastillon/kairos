@@ -2139,39 +2139,39 @@ function hexToHsl(hex) {
 }
 
 function openColorWheel() {
-  const before = window.kairosTheme?.current() || 'auto';
-  const start = before.startsWith('custom:') ? before.slice(7) : '#f3dbe4';
-  let [h, s, l] = hexToHsl(start);
+  const T = window.kairosTheme;
+  const before = T?.current() || 'auto';
+  const startHex = before.startsWith('custom:') ? before.slice(7) : '#e9a3bd';
+  let [h, s] = hexToHsl(startHex);
+  if (s < 8) s = 40;
+  let mode = T.modeFor(startHex);
   let saved = false;
   openModal(`
     <div class="modal-head"><h2>Elige tu color de fondo</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
-    <p class="hint" style="margin-top:0">Mueve el punto por la ruleta y ajusta la luminosidad. La letra se pondrá en negro o en blanco para que siempre se lea bien.</p>
+    <p class="hint" style="margin-top:0">Mueve el punto por la ruleta para elegir el tono y escoge si lo quieres claro u oscuro. El fondo se ajusta para que todo se lea bien.</p>
     <div class="wheel-wrap">
       <div class="color-wheel" id="cw"><span class="cw-dot" id="cw-dot"></span></div>
       <div class="cw-side">
         <div class="cw-preview" id="cw-prev"><b>Así se verá</b><span>Tu horario, tus tareas…</span><i id="cw-card">Aa</i></div>
-        <label class="field"><span>Luminosidad</span><input type="range" id="cw-l" min="4" max="97" step="1"></label>
-        <label class="field"><span>Código</span><input type="text" id="cw-hex" maxlength="7" spellcheck="false"></label>
+        <div class="field"><span>Fondo</span>
+          <div class="segmented" id="cw-mode"><button type="button" data-mode="light">Claro · letra negra</button><button type="button" data-mode="dark">Oscuro · letra blanca</button></div>
+        </div>
       </div>
     </div>
     <div class="modal-foot"><button type="button" class="btn" id="cw-cancel">Cancelar</button><button type="button" class="btn btn-primary" id="cw-ok">Usar este color</button></div>`, (root) => {
-    const wheel = $('#cw', root), dot = $('#cw-dot', root), range = $('#cw-l', root), hexIn = $('#cw-hex', root), prev = $('#cw-prev', root);
-    const hex = () => hslToHex(h, s, l);
-    const paint = (fromHex = false) => {
-      const c = hex();
+    const wheel = $('#cw', root), dot = $('#cw-dot', root), prev = $('#cw-prev', root);
+    const final = () => T.tone(hslToHex(h, s, 50), mode);
+    const paint = () => {
       const rad = (h - 90) * (Math.PI / 180);
       dot.style.left = `${50 + Math.cos(rad) * (s / 2)}%`;
       dot.style.top = `${50 + Math.sin(rad) * (s / 2)}%`;
-      dot.style.background = c;
-      wheel.style.setProperty('--l', `${l}%`);
-      range.value = Math.round(l);
-      range.style.setProperty('--h', h);
-      range.style.setProperty('--s', `${s}%`);
-      if (!fromHex) hexIn.value = c;
-      const p = window.kairosTheme.preview(c);
+      dot.style.background = hslToHex(h, s, 50);
+      $$('#cw-mode button', root).forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+      const c = final();
+      const p = T.preview(c);
       prev.style.background = p.bg; prev.style.color = p.text; prev.style.borderColor = p.border;
       $('#cw-card', root).style.cssText = `background:${p.surface};border-color:${p.border};color:${p.text}`;
-      window.kairosTheme.apply(`custom:${c}`); // se ve en toda la app mientras eliges
+      T.apply(`custom:${c}`); // se ve en toda la app mientras eliges
     };
     const pick = (e) => {
       const r = wheel.getBoundingClientRect();
@@ -2183,19 +2183,15 @@ function openColorWheel() {
     };
     wheel.addEventListener('pointerdown', (e) => { wheel.setPointerCapture(e.pointerId); pick(e); });
     wheel.addEventListener('pointermove', (e) => { if (wheel.hasPointerCapture(e.pointerId)) pick(e); });
-    range.oninput = () => { l = Number(range.value); paint(); };
-    hexIn.oninput = () => {
-      const v = hexIn.value.trim().toLowerCase();
-      if (/^#[0-9a-f]{6}$/.test(v)) { [h, s, l] = hexToHsl(v); paint(true); }
-    };
-    const restore = () => { if (!saved) window.kairosTheme.apply(before); };
+    $('#cw-mode', root).onclick = (e) => { const b = e.target.closest('[data-mode]'); if (b) { mode = b.dataset.mode; paint(); } };
+    const restore = () => { if (!saved) T.apply(before); };
     $('#cw-cancel', root).onclick = () => { restore(); closeModal(); };
     $('[data-close]', root).addEventListener('click', restore);
     root.parentElement.addEventListener('mousedown', (e) => { if (e.target === root.parentElement) restore(); });
     $('#cw-ok', root).onclick = async () => {
-      const id = `custom:${hex()}`;
+      const id = `custom:${final()}`;
       saved = true;
-      window.kairosTheme.apply(id);
+      T.apply(id);
       closeModal();
       const r = await attempt(() => api('PUT', '/me/settings', { theme: id }), 'Color de fondo guardado');
       if (r) state.user = r.user;
