@@ -86,6 +86,9 @@ function checkPassword(pw, stored) {
 /* ============================================================
    Formato de las filas que recibe la app
    ============================================================ */
+/** Apariencias de la app (fondo y, según su claridad, letra negra o blanca). */
+const THEMES = ['auto', 'crema', 'blanco', 'gris', 'rosa', 'menta', 'cielo', 'lavanda', 'arena', 'oscuro', 'negro', 'noche', 'bosque', 'vino'];
+
 const fmtUser = (u, tt) => ({
   id: u.id,
   name: u.name,
@@ -103,6 +106,7 @@ const fmtUser = (u, tt) => ({
   role: u.role || 'user',
   is_admin: u.role === 'admin' || u.role === 'superadmin',
   is_superadmin: u.role === 'superadmin',
+  theme: u.theme || 'auto',
   avatar_url: u.avatar_data ? `/api/me/avatar?v=${encodeURIComponent(u.avatar_updated || '')}` : null,
 });
 const fmtTimetable = (t) => ({
@@ -144,6 +148,7 @@ async function main() {
   for (const col of ['start_date TEXT', 'end_date TEXT']) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
   await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
   await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
+  await db.run("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'auto'").catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
@@ -449,6 +454,7 @@ async function main() {
     const set = (col, v) => { sets.push(`${col} = ?`); vals.push(v); };
     if ('name' in body) { const n = str(body.name, 80); if (!n) throw bad('El nombre no puede estar vacío'); set('name', n); }
     if ('timezone' in body) { if (!validTimezone(body.timezone)) throw bad('Zona horaria no válida'); set('timezone', body.timezone); }
+    if ('theme' in body) { if (!THEMES.includes(body.theme)) throw bad('Apariencia no válida'); set('theme', body.theme); }
     if ('email_notifications' in body) {
       if (body.email_notifications && (await getUser(uid)).is_guest) throw bad('Crea una cuenta para recibir avisos por correo');
       set('email_notifications', bool(body.email_notifications));

@@ -6,6 +6,7 @@
   <script src="/nozoom.js"></script>
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#14213d">
+  <script src="/theme.js"></script>
   <title>Textos legales · Kairos</title>
   <meta name="description" content="Aviso legal, política de privacidad, términos de uso y política de cookies de Kairos.">
   <link rel="icon" href="/favicon.ico" sizes="any">
@@ -17,9 +18,8 @@
     @font-face { font-family: "Figtree"; font-weight: 300 900; font-display: swap; src: url("/fonts/figtree-latin-wght-normal.woff2") format("woff2"); }
     @font-face { font-family: "Fraunces"; font-weight: 100 900; font-display: swap; src: url("/fonts/fraunces-latin-wght-normal.woff2") format("woff2"); }
     :root { --bg: #f6f4ef; --surface: #fff; --text: #1f2b30; --muted: #5f686c; --border: #e4dfd4; --accent: #2c5f6f; --navy: #14213d; --gold: #fca311; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #121619; --surface: #1a1f23; --text: #e8ecec; --muted: #a2abaf; --border: #2d343a; --accent: #8cc3cf; }
-    }
+    @media (prefers-color-scheme: dark) { :root:not([data-mode="light"]) { --bg: #121619; --surface: #1a1f23; --text: #e8ecec; --muted: #a2abaf; --border: #2d343a; --accent: #8cc3cf; } }
+    :root[data-mode="dark"] { --bg: #121619; --surface: #1a1f23; --text: #e8ecec; --muted: #a2abaf; --border: #2d343a; --accent: #8cc3cf; }
     * { box-sizing: border-box; }
     html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     html { scroll-padding-top: 150px; }
@@ -41,7 +41,8 @@
       border-radius: 9px; cursor: pointer; }
     .tabs button:hover { color: var(--text); }
     .tabs button[aria-selected="true"] { background: var(--navy); color: #fff; }
-    @media (prefers-color-scheme: dark) { .tabs button[aria-selected="true"] { background: var(--accent); color: #0f1c20; } }
+    @media (prefers-color-scheme: dark) { :root:not([data-mode="light"]) .tabs button[aria-selected="true"] { background: var(--accent); color: #0f1c20; } }
+    :root[data-mode="dark"] .tabs button[aria-selected="true"] { background: var(--accent); color: #0f1c20; }
     @media (max-width: 520px) { .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .js-tabs section[hidden] { display: none; }
     .tab-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 6px; }

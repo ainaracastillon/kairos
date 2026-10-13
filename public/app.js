@@ -255,6 +255,8 @@ async function loadAll() {
   const [boot, items, events] = await Promise.all([api('GET', '/bootstrap'), api('GET', '/items'), api('GET', '/events')]);
   state.events = events;
   state.user = boot.user;
+  // La apariencia elegida en la cuenta se aplica también en este dispositivo.
+  if (window.kairosTheme && boot.user.theme && window.kairosTheme.current() !== boot.user.theme) window.kairosTheme.apply(boot.user.theme);
   state.mailConfigured = boot.mail_configured;
   state.pushAvailable = boot.push_available;
   state.pushDevices = boot.push_devices;
@@ -2071,6 +2073,39 @@ const LEGAL_LIST_CARD = () => `
       </ul>
     </section>`;
 
+/** Apariencia: color de fondo de la app. La letra pasa a negro o blanco según el fondo. */
+const APPEARANCE_CARD = () => {
+  const themes = window.kairosTheme?.list || [];
+  const current = state.user.theme || window.kairosTheme?.current() || 'auto';
+  return `
+    <section class="card">
+      <h2>Apariencia</h2>
+      <p class="hint">Elige el color de fondo de la app. La letra se pone en negro o en blanco para que siempre se lea bien. Se guarda en tu ${state.user.is_guest ? 'dispositivo' : 'cuenta y se aplica en todos tus dispositivos'}.</p>
+      <div class="theme-grid" id="theme-grid" role="radiogroup" aria-label="Color de fondo">
+        ${themes.map((t) => `
+          <button type="button" class="theme-opt ${t.id === current ? 'active' : ''}" data-theme-id="${t.id}" role="radio" aria-checked="${t.id === current}"
+            style="${t.mode ? `--tb:${t.bg};--ts:${t.surface};--tbd:${t.border};--tt:${t.mode === 'dark' ? '#e8ecec' : '#1f2b30'}` : ''}">
+            <span class="theme-prev ${t.mode ? '' : 'auto'}"><span class="theme-card">Aa</span></span>
+            <span class="theme-name">${esc(t.name)}${t.id === 'auto' ? '<small>Como tu móvil</small>' : ''}</span>
+          </button>`).join('')}
+      </div>
+    </section>`;
+};
+
+function bindAppearance(root) {
+  const grid = $('#theme-grid', root);
+  if (!grid) return;
+  grid.onclick = async (e) => {
+    const b = e.target.closest('[data-theme-id]');
+    if (!b) return;
+    const id = b.dataset.themeId;
+    window.kairosTheme?.apply(id);
+    $$('.theme-opt', grid).forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-checked', String(x === b)); });
+    const r = await attempt(() => api('PUT', '/me/settings', { theme: id }));
+    if (r) state.user = r.user;
+  };
+}
+
 function guestAccountView() {
   return `<div class="scroll"><div class="settings account">
     <section class="card account-head guest-head">
@@ -2094,6 +2129,7 @@ function guestAccountView() {
       </div>
       <p class="hint" style="margin:10px 0 0">Si inicias sesión con una cuenta que ya tienes, se abrirán los datos de esa cuenta y los de este dispositivo se borrarán.</p>
     </section>
+    ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
     <section class="card danger-zone">
       <h2>Borrar todos mis datos</h2>
@@ -2159,6 +2195,7 @@ function accountView() {
       <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
     </section>
 
+    ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
 
     ${u.is_superadmin ? `<section class="card">
@@ -2209,6 +2246,7 @@ async function photoToDataUrl(file) {
 }
 
 function bindAccount(root) {
+  bindAppearance(root);
   root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
   const delBtn = $('#delete-account', root);
   if (delBtn) delBtn.onclick = () => openDeleteAccountModal();
