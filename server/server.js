@@ -283,7 +283,7 @@ async function main() {
     const list = (attempts.get(ip) || []).filter((t) => now - t < 15 * 60000);
     list.push(now);
     attempts.set(ip, list);
-    if (list.length > 30) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos y vuelve a probar.');
+    if (list.length > 30) throw new HttpError(429, 'Has hecho demasiados intentos seguidos. Por seguridad, espera 15 minutos y vuelve a probar.');
   }
 
   /* ============================================================
@@ -366,8 +366,14 @@ async function main() {
   route('POST', '/auth/login', async ({ body, req, res }) => {
     rateLimit(req);
     const email = str(body.email, 200).toLowerCase();
-    const u = await db.get('SELECT * FROM users WHERE email = ?', [email]);
-    if (!u || !checkPassword(String(body.password || ''), u.password_hash)) throw new HttpError(401, 'Correo o contraseña incorrectos');
+    const password = String(body.password || '');
+    // Se indica siempre el motivo exacto por el que no se puede entrar.
+    if (!email) throw bad('Escribe tu correo electrónico.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Ese correo no es válido. Revisa que esté bien escrito (por ejemplo, nombre@gmail.com).');
+    if (!password) throw bad('Escribe tu contraseña.');
+    const u = await db.get('SELECT * FROM users WHERE email = ? AND is_guest = 0', [email]);
+    if (!u) throw new HttpError(401, `No hay ninguna cuenta con el correo ${email}. Revisa que esté bien escrito o crea una cuenta.`);
+    if (!checkPassword(password, u.password_hash)) throw new HttpError(401, 'La contraseña no es correcta. Revisa mayúsculas y minúsculas, o pulsa «¿Has olvidado tu contraseña?» para crear una nueva.');
     if (u.suspended_at) throw suspendedError(u);
     const prev = await currentUser(req);
     if (prev?.is_guest) await deleteUserData(prev.id);

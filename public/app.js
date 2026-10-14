@@ -109,15 +109,20 @@ function toast(msg, isError = false) {
 }
 
 async function api(method, url, body) {
-  const res = await fetch('/api' + url, {
-    method,
-    headers: method === 'GET' ? {} : { 'Content-Type': 'application/json' },
-    body: method === 'GET' ? undefined : JSON.stringify(body || {}),
-    credentials: 'same-origin',
-  });
+  let res;
+  try {
+    res = await fetch('/api' + url, {
+      method,
+      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json' },
+      body: method === 'GET' ? undefined : JSON.stringify(body || {}),
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new Error('No se ha podido conectar con Kairos. Comprueba tu conexión a internet y vuelve a intentarlo.');
+  }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
-    if (res.status === 401 && state.user) { state.user = null; closeModal(); renderAuth('welcome'); }
+    if (res.status === 401 && state.user && !url.startsWith('/auth/')) { state.user = null; closeModal(); renderAuth('welcome'); }
     const err = new Error(data?.error || `Error ${res.status}`);
     if (res.status === 403 && data?.suspended) {
       err.suspended = true;
