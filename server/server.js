@@ -22,7 +22,7 @@ const GUEST_MAX_IDLE_DAYS = 365;
 const COOKIE = 'kairos_session';
 const TERMS_VERSION = '2026-10-11';
 // Superadministradora: la única que puede nombrar o quitar administradores. Se puede cambiar con la variable SUPERADMIN_EMAIL.
-const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'ainara14cs@hotmail.com').trim().toLowerCase(); // fecha de los textos legales vigentes (public/legal.html)
+const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'apps.ainara@outlook.com').trim().toLowerCase(); // fecha de los textos legales vigentes (public/legal.html)
 
 /* ============================================================
    Utilidades
