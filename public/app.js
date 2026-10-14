@@ -337,7 +337,7 @@ function renderAuth(mode = 'welcome', opts = {}) {
   };
   const [title, sub] = titles[mode];
   const form = isForgot ? `
-      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required value="${esc(opts.email || '')}"></label>
+      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" autocomplete="email" required value="${esc(opts.email || '')}"></label>
       <div class="error" id="auth-error"></div>
       <button class="btn btn-primary" type="submit">Enviar enlace</button>
       <div class="switch">¿Te has acordado? <a data-mode="login">Inicia sesión</a></div>`
@@ -354,7 +354,7 @@ function renderAuth(mode = 'welcome', opts = {}) {
       <p class="hint auth-terms">Al empezar aceptas ${TERMS_LINKS}.</p>` : `
       ${isLogin && guest ? `<div class="status warn">${icon('alert')}<span>Si entras en una cuenta, lo que has hecho sin cuenta en este dispositivo se borrará. Para conservarlo, <a data-mode="upgrade">crea una cuenta con ello</a>.</span></div>` : ''}
       ${isLogin ? '' : '<label class="field"><span>Nombre</span><input type="text" name="name" autocomplete="name" required></label>'}
-      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required></label>
+      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" autocomplete="email" required></label>
       <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required minlength="8">
         ${isLogin ? '<a class="forgot-link" data-mode="forgot">¿Has olvidado tu contraseña?</a>' : '<small class="hint">Mínimo 8 caracteres.</small>'}</label>
       ${isLogin ? '' : `<label class="check-line legal-accept"><input type="checkbox" name="accept_terms" required><span>He leído y acepto ${TERMS_LINKS}.</span></label>`}
@@ -2271,7 +2271,7 @@ function accountView() {
       <p class="hint">Es con el que entras y donde recibes los avisos. Para cambiarlo, confirma tu contraseña.</p>
       <form id="email-form">
         <div class="row">
-          <label class="field"><span>Nuevo correo</span><input type="email" name="email" autocomplete="email" value="${esc(u.email)}" required></label>
+          <label class="field"><span>Nuevo correo</span><input type="email" name="email" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" autocomplete="email" value="${esc(u.email)}" required></label>
           <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="current-password" required></label>
         </div>
         <button class="btn">Cambiar correo</button>
@@ -3307,6 +3307,10 @@ document.fonts?.ready.then(() => { if (state.view === 'week') fitTimetable(); })
 function addPasswordEyes(scope = document) {
   scope.querySelectorAll?.('input[type=password]:not([data-pw])').forEach((input) => {
     input.dataset.pw = '1';
+    // Que el móvil no ponga mayúsculas ni corrija la contraseña (también al mostrarla con el ojo).
+    input.setAttribute('autocapitalize', 'none');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('spellcheck', 'false');
     const wrap = document.createElement('span');
     wrap.className = 'pw-wrap';
     input.replaceWith(wrap);

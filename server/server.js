@@ -373,7 +373,8 @@ async function main() {
     if (!password) throw bad('Escribe tu contraseña.');
     const u = await db.get('SELECT * FROM users WHERE email = ? AND is_guest = 0', [email]);
     if (!u) throw new HttpError(401, `No hay ninguna cuenta con el correo ${email}. Revisa que esté bien escrito o crea una cuenta.`);
-    if (!checkPassword(password, u.password_hash)) throw new HttpError(401, 'La contraseña no es correcta. Revisa mayúsculas y minúsculas, o pulsa «¿Has olvidado tu contraseña?» para crear una nueva.');
+    // Un espacio añadido sin querer al principio o al final (p. ej. por el teclado del móvil) no impide entrar.
+    if (!checkPassword(password, u.password_hash) && !(password.trim() !== password && checkPassword(password.trim(), u.password_hash))) throw new HttpError(401, 'La contraseña no es correcta. Revisa mayúsculas y minúsculas, o pulsa «¿Has olvidado tu contraseña?» para crear una nueva.');
     if (u.suspended_at) throw suspendedError(u);
     const prev = await currentUser(req);
     if (prev?.is_guest) await deleteUserData(prev.id);
