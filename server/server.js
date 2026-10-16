@@ -154,6 +154,7 @@ async function main() {
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
   notify.checkSender();
+  if (process.env.RELAY_SENDER) notify.ensureSender(process.env.RELAY_SENDER);
 
   /* ---------- consultas de apoyo ---------- */
   const getUser = (id) => db.get('SELECT * FROM users WHERE id = ?', [id]);
@@ -297,6 +298,17 @@ async function main() {
   };
 
   /* ---------- cuenta ---------- */
+  /* ---------- correo para otras apps de la casa (Entre Fogones): usa el Brevo de Kairos ---------- */
+  route('POST', '/relay/mail', async ({ req, body }) => {
+    const tok = process.env.MAIL_RELAY_TOKEN || '';
+    const got = String(req.headers['x-relay-token'] || '');
+    if (!tok || got.length !== tok.length || !require('crypto').timingSafeEqual(Buffer.from(got), Buffer.from(tok))) throw new HttpError(403, 'No permitido');
+    const to = String(body.to || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) throw new HttpError(400, 'Correo no válido');
+    await notify.sendMailAs({ from: String(body.from || ''), to, subject: String(body.subject || '').slice(0, 200), text: String(body.text || ''), html: String(body.html || ''), replyTo: body.replyTo ? String(body.replyTo) : undefined });
+    return { ok: true };
+  }, { auth: false });
+
   route('POST', '/auth/register', async ({ body, res }) => {
     const name = str(body.name, 80);
     const email = str(body.email, 200).toLowerCase();

@@ -29,6 +29,38 @@ function parseFrom(from) {
   return m ? { name: m[1] || 'Kairos', email: m[2] } : { name: 'Kairos', email: from.trim() };
 }
 
+/** Envío para otras apps (Entre Fogones): remitente propio; si Brevo no lo acepta, sale desde el remitente de Kairos con «responder a» el pedido */
+async function sendMailAs({ from, to, subject, text, html, replyTo }) {
+  if (!process.env.BREVO_API_KEY) throw new Error('Brevo no está configurado');
+  const want = parseFrom(from || MAIL_FROM);
+  const send = (sender, rt) => fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST', headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ sender, to: [{ email: to }], subject, textContent: text, htmlContent: html, ...(rt ? { replyTo: { email: rt } } : {}) }) });
+  let res = await send(want, replyTo);
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    // remitente sin verificar: se usa la dirección base (sin +etiqueta) o la de Kairos, con el mismo nombre
+    const base = want.email.replace(/\+[^@]*@/, '@');
+    const fallback = base !== want.email ? base : parseFrom(MAIL_FROM).email;
+    console.log('[correo] remitente', want.email, 'rechazado:', err.slice(0, 160), '→ uso', fallback);
+    res = await send({ name: want.name, email: fallback }, replyTo || want.email);
+    if (!res.ok) throw new Error(`No se pudo enviar el correo (${res.status}): ${await res.text().catch(() => '')}`);
+  }
+}
+/** Da de alta un remitente en Brevo si no está (Brevo le manda un correo para verificarlo) */
+async function ensureSender(from) {
+  if (!process.env.BREVO_API_KEY || !from) return;
+  const want = parseFrom(from);
+  try {
+    const r = await fetch('https://api.brevo.com/v3/senders', { headers: { 'api-key': process.env.BREVO_API_KEY, Accept: 'application/json' } });
+    const { senders = [] } = r.ok ? await r.json() : {};
+    const s = senders.find((x) => String(x.email).toLowerCase() === want.email.toLowerCase());
+    if (s) { console.log(`[correo] Remitente extra ${want.email}: ${s.active ? 'VERIFICADO' : 'SIN VERIFICAR (revisa el correo de Brevo)'}`); return; }
+    const c = await fetch('https://api.brevo.com/v3/senders', { method: 'POST', headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ name: want.name, email: want.email }) });
+    console.log(`[correo] Alta del remitente ${want.email} en Brevo: ${c.status} ${(await c.text().catch(() => '')).slice(0, 160)}`);
+  } catch (e) { console.log('[correo] alta de remitente:', e.message); }
+}
+
 async function sendMail({ to, subject, text, html, replyTo }) {
   // Brevo: gratis hasta 300 correos al día y permite usar como remitente un correo verificado (p. ej. un Gmail).
   if (process.env.BREVO_API_KEY) {
@@ -134,4 +166,4 @@ async function checkSender() {
 /** A quién llegan los mensajes del formulario de contacto (nunca se muestra en la web). */
 const contactInbox = () => process.env.CONTACT_TO || parseFrom(MAIL_FROM).email;
 
-module.exports = { checkSender, contactInbox, sendMail, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
+module.exports = { checkSender, contactInbox, sendMail, sendMailAs, ensureSender, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
