@@ -154,6 +154,7 @@ async function main() {
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
   notify.checkSender();
+  setTimeout(() => notify.logMailEvents(), 5000);
   if (process.env.RELAY_SENDER) notify.ensureSender(process.env.RELAY_SENDER);
 
   /* ---------- consultas de apoyo ---------- */

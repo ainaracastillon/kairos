@@ -48,6 +48,16 @@ async function sendMailAs({ from, to, subject, text, html, replyTo }) {
   }
 }
 /** Da de alta un remitente en Brevo si no está (Brevo le manda un correo para verificarlo) */
+/** Diagnóstico: últimos eventos de envío en Brevo (entregado, rebotado, bloqueado…) */
+async function logMailEvents() {
+  if (!process.env.BREVO_API_KEY) return;
+  try {
+    const r = await fetch('https://api.brevo.com/v3/smtp/statistics/events?limit=40&days=3&sort=desc', { headers: { 'api-key': process.env.BREVO_API_KEY, Accept: 'application/json' } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { console.log('[correo] eventos Brevo', r.status, JSON.stringify(j).slice(0, 200)); return; }
+    for (const e of (j.events || []).slice(0, 40)) console.log('[correo] evento', e.date, e.event, String(e.email || '').replace(/^(.{3}).*@/, '$1…@'), e.from || '', (e.subject || '').slice(0, 50), e.reason || '');
+  } catch (e) { console.log('[correo] eventos Brevo:', e.message); }
+}
 async function ensureSender(from) {
   if (!process.env.BREVO_API_KEY || !from) return;
   const want = parseFrom(from);
@@ -166,4 +176,4 @@ async function checkSender() {
 /** A quién llegan los mensajes del formulario de contacto (nunca se muestra en la web). */
 const contactInbox = () => process.env.CONTACT_TO || parseFrom(MAIL_FROM).email;
 
-module.exports = { checkSender, contactInbox, sendMail, sendMailAs, ensureSender, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
+module.exports = { logMailEvents, checkSender, contactInbox, sendMail, sendMailAs, ensureSender, mailHtml, mailConfigured, escHtml, initPush, pushAvailable, pushPublicKey, pushToUser };
