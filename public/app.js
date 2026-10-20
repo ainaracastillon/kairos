@@ -50,6 +50,7 @@ const ICONS = {
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  calAdd: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M12 12.5v5M9.5 15h5"/>',
   refresh: '<path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 5v6.5h-6.5"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff: '<path d="M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.4 3.2M6.6 6.6C4 8.3 2.5 12 2.5 12S6 18.5 12 18.5c1.9 0 3.5-.6 4.9-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17"/>',
@@ -878,6 +879,7 @@ function dayItemRow(item, withDate = false, checkable = false) {
     ${checkable ? `<label class="ev-check" title="Marcar como hecha"><input type="checkbox" data-toggle="${item.id}" aria-label="Marcar como hecha"></label>` : ''}
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
     <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+    ${item.type === 'exam' ? `<button type="button" class="icon-btn row-eye cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}
     ${item.description.trim() ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción" aria-label="Ver la descripción">${icon('eye')}</button>` : ''}
   </div>`;
 }
@@ -911,6 +913,7 @@ function monthEventRow(ev) {
     <label class="ev-check" title="${ev.done ? 'Marcar como pendiente' : 'Marcar como hecho'}"><input type="checkbox" data-ev-done="${ev.id}" ${ev.done ? 'checked' : ''} aria-label="Hecho"></label>
     <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${esc(ev.all_day ? 'Todo el día' : timeOf(d))}</span>
     <div class="grow"><b>${esc(ev.title)}</b><div class="info"><span class="badge event">Evento</span>${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}</div></div>
+    <button type="button" class="icon-btn row-eye cal-btn" data-cal-event="${ev.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>
     ${ev.description.trim() ? `<button type="button" class="icon-btn row-eye" data-event="${ev.id}" title="Ver las notas" aria-label="Ver las notas">${icon('eye')}</button>` : ''}
   </div>`;
 }
@@ -1503,9 +1506,9 @@ function eventCard(ev, { editable = false, showDate = false } = {}) {
       </div>
       <h3>${esc(ev.title)}</h3>
     </div>
-    ${editable
+    <div class="card-actions"><button type="button" class="icon-btn cal-btn" data-cal-event="${ev.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>${editable
       ? `<button class="icon-btn" data-edit-event="${ev.id}" title="Editar" aria-label="Editar evento">${icon('pencil')}</button>`
-      : `<button class="icon-btn" data-event="${ev.id}" title="Ver detalles y notas" aria-label="Ver detalles y notas">${icon('eye')}</button>`}
+      : `<button class="icon-btn" data-event="${ev.id}" title="Ver detalles y notas" aria-label="Ver detalles y notas">${icon('eye')}</button>`}</div>
   </article>`;
 }
 
@@ -1515,6 +1518,51 @@ function eventDateLabel(ev) {
   const e = ev.end_at ? new Date(ev.end_at) : null;
   return e && dateKey(e) !== dateKey(s) ? `${fmt(s)} – ${fmt(e)}` : fmt(s);
 }
+
+/* ============================================================
+   Añadir exámenes y eventos al calendario del móvil (Apple / Android)
+   ============================================================ */
+const gcalDate = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+function googleCalendarUrl({ title, start, end, allDay, location, details }) {
+  let dates;
+  if (allDay) {
+    const s = dateKey(new Date(start)).replace(/-/g, '');
+    const e = new Date(end || start); e.setDate(e.getDate() + 1);
+    dates = `${s}/${dateKey(e).replace(/-/g, '')}`;
+  } else {
+    dates = `${gcalDate(start)}/${gcalDate(end || new Date(new Date(start).getTime() + 3600000))}`;
+  }
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: title, dates, details: details || '', location: location || '', ctz: state.user?.timezone || 'Europe/Madrid' });
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+function openAddToCalendar(kind, id) {
+  const it = kind === 'item' ? itemById(id) : eventById(id);
+  if (!it) return;
+  const s = kind === 'item' ? subjectById(it.subject_id) : null;
+  const title = kind === 'item' ? `${it.type === 'exam' ? 'Examen' : 'Tarea'}: ${it.title}${s && !it.title.toLowerCase().includes(s.name.toLowerCase()) ? ` (${s.name})` : ''}` : it.title;
+  const gUrl = googleCalendarUrl(kind === 'item'
+    ? { title, start: it.due_at, location: it.room, details: it.description }
+    : { title, start: it.start_at, end: it.end_at, allDay: it.all_day, location: it.location, details: it.description });
+  const icsUrl = `/api/${kind === 'item' ? 'items' : 'events'}/${id}/ics`;
+  const android = /android/i.test(navigator.userAgent);
+  const apple = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent);
+  const optApple = `<a class="cal-opt" href="${icsUrl}" ${apple ? '' : 'download'}>${icon('calendar')}<span><b>Calendario de Apple</b><small>iPhone, iPad y Mac. También Outlook y otros calendarios.</small></span></a>`;
+  const optGoogle = `<a class="cal-opt" href="${esc(gUrl)}" target="_blank" rel="noopener">${icon('calendar')}<span><b>Google Calendar</b><small>Android y cualquier dispositivo con tu cuenta de Google.</small></span></a>`;
+  openModal(`
+    <div class="modal-head"><div class="head-text"><h2>Añadir al calendario</h2><small class="hint">${esc(title)}</small></div><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <div class="cal-opts">${android ? optGoogle + optApple : optApple + optGoogle}</div>
+    <p class="hint" style="margin:12px 0 0">Se añade una copia con la fecha, la hora, el aula o lugar, las notas y el aviso. Para que todos tus exámenes y eventos se añadan y se actualicen solos, usa «Calendario del móvil» en Ajustes.</p>`, (root) => {
+    root.addEventListener('click', (e) => { if (e.target.closest('.cal-opt')) setTimeout(closeModal, 300); });
+  });
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cal-item], [data-cal-event]');
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (b.dataset.calItem) openAddToCalendar('item', Number(b.dataset.calItem));
+  else openAddToCalendar('event', Number(b.dataset.calEvent));
+}, true);
 
 /** Ver una tarea o un examen con su descripción (solo lectura). */
 function openItemView(item) {
@@ -1532,7 +1580,7 @@ function openItemView(item) {
     </div>
     <h3 class="ev-notes-title">Descripción</h3>
     <div class="ev-notes">${esc(item.description)}</div>
-    <div class="modal-foot"><button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
+    <div class="modal-foot">${item.type === 'exam' ? `<button type="button" class="btn" data-cal-item="${item.id}">${icon('calAdd')}Añadir al calendario</button>` : ''}<button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
 }
 
 /** Ver un evento (detalles y notas). Para editarlo se usa la sección Eventos del menú. */
@@ -1553,6 +1601,7 @@ function openEventView(ev, { returnTo } = {}) {
     ${ev.description ? `<div class="ev-notes">${esc(ev.description)}</div>` : '<p class="hint">Este evento no tiene notas.</p>'}
     <div class="modal-foot">
       ${returnTo ? `<button type="button" class="btn left" id="ev-back">${icon('left')}Volver al día</button>` : ''}
+      <button type="button" class="btn" data-cal-event="${ev.id}">${icon('calAdd')}Añadir al calendario</button>
       <button type="button" class="btn" id="ev-go-edit">${icon('pencil')}Editar en Eventos</button>
       <button type="button" class="btn btn-primary" data-close>Cerrar</button>
     </div>`, (root) => {
@@ -1720,7 +1769,7 @@ function itemCard(item) {
         <ul class="checklist">${item.checklist.map((c) => `<li><label class="${c.done ? 'done' : ''}"><input type="checkbox" data-check="${c.id}" ${c.done ? 'checked' : ''}><span>${esc(c.text)}</span></label></li>`).join('')}</ul>
         <div class="progress" title="${done}/${item.checklist.length}"><div style="width:${Math.round((done / item.checklist.length) * 100)}%"></div></div>` : ''}
     </div>
-    <button class="icon-btn" data-edit="${item.id}" title="Editar" aria-label="Editar">${icon('pencil')}</button>
+    <div class="card-actions">${item.type === 'exam' ? `<button type="button" class="icon-btn cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}<button class="icon-btn" data-edit="${item.id}" title="Editar" aria-label="Editar">${icon('pencil')}</button></div>
   </article>`;
 }
 
@@ -1938,6 +1987,12 @@ function settingsView() {
       <button class="btn" id="add-slot">${icon('plus')}Añadir tramo</button>
     </section>
 
+    <section class="card" id="cal-sub">
+      <h2>Calendario del móvil</h2>
+      <p class="hint">Añade todos tus exámenes y eventos al calendario de tu móvil de una vez. Se actualizan solos cuando los cambias en Kairos (Apple lo revisa cada hora; Google, varias veces al día).</p>
+      <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
+    </section>
+
     <section class="card">
       <h2>Avisos</h2>
       <p class="hint">Recibe los recordatorios de tus tareas y exámenes como notificación, por correo o de las dos formas.</p>
@@ -1967,7 +2022,33 @@ ${state.user.is_guest ? `<div class="status info">${icon('mail')}<span>Los aviso
   </div></div>`;
 }
 
+async function bindCalendarSub(root) {
+  const box = $('#cal-sub-actions', root);
+  if (!box) return;
+  const draw = (token) => {
+    const https = `${location.origin}/api/cal/${token}.ics`;
+    const webcal = https.replace(/^https?:/, 'webcal:');
+    const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    box.innerHTML = `
+      <a class="btn" href="${webcal}">${icon('calendar')}iPhone / iPad / Mac</a>
+      <a class="btn" href="${google}" target="_blank" rel="noopener">${icon('calendar')}Google Calendar (Android)</a>
+      <button type="button" class="btn btn-ghost" id="cal-copy">${icon('doc')}Copiar enlace</button>
+      <button type="button" class="btn btn-ghost" id="cal-reset" title="El enlace anterior dejará de funcionar">${icon('refresh')}Crear un enlace nuevo</button>
+      <p class="hint" style="flex-basis:100%;margin:6px 0 0">El enlace es privado: cualquiera que lo tenga puede ver tus exámenes y eventos. Si lo has compartido sin querer, crea uno nuevo.</p>`;
+    $('#cal-copy', box).onclick = async () => {
+      try { await navigator.clipboard.writeText(https); toast('Enlace copiado'); } catch { prompt('Copia este enlace:', https); }
+    };
+    $('#cal-reset', box).onclick = async () => {
+      if (!confirm('¿Crear un enlace nuevo? El anterior dejará de funcionar y tendrás que volver a añadir el calendario en tus dispositivos.')) return;
+      const r = await attempt(() => api('POST', '/me/calendar/reset'), 'Enlace nuevo creado');
+      if (r) draw(r.token);
+    };
+  };
+  try { draw((await api('GET', '/me/calendar')).token); } catch (err) { box.innerHTML = `<span class="hint">${esc(err.message)}</span>`; }
+}
+
 function bindSettings(root) {
+  bindCalendarSub(root);
   const saveSettings = async (patch) => {
     const r = await attempt(() => api('PUT', '/me/settings', patch), 'Ajustes guardados');
     if (r) state.user = r.user;

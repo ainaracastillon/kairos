@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { openDb } = require('./db');
 const notify = require('./notify');
+const ics = require('./ics');
 const { startReminders } = require('./reminders');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -149,6 +150,7 @@ async function main() {
   await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
   await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
   await db.run("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'auto'").catch(() => {});
+  await db.run('ALTER TABLE users ADD COLUMN calendar_token TEXT').catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
@@ -1108,6 +1110,47 @@ async function main() {
     }
   }
   route('GET', '/items', ({ uid }) => listItems(uid));
+
+  /* ---------- Añadir al calendario del móvil (.ics) ---------- */
+  const calHost = (req) => (req.headers.host || 'kairos').replace(/:\d+$/, '');
+  const icsFile = (text, filename, inline = false) => ({ __binary: Buffer.from(text, 'utf8'), type: 'text/calendar; charset=utf-8', filename, inline, cache: 'no-store' });
+  const userTz = (u) => (validTimezone(u?.timezone) ? u.timezone : 'Europe/Madrid');
+  const fileSafe = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'kairos';
+
+  route('GET', '/items/:id/ics', async ({ uid, params, req }) => {
+    const it = await db.get('SELECT * FROM items WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
+    if (!it) throw notFound('No encontrado');
+    const subject = it.subject_id ? await db.get('SELECT * FROM subjects WHERE id = ?', [it.subject_id]) : null;
+    return icsFile(ics.calendar([ics.itemEvent(it, subject, userTz(await getUser(uid)), calHost(req))]), `${fileSafe(it.title)}.ics`);
+  });
+  route('GET', '/events/:id/ics', async ({ uid, params, req }) => {
+    const ev = await db.get('SELECT * FROM events WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
+    if (!ev) throw notFound('No encontrado');
+    return icsFile(ics.calendar([ics.eventEvent(ev, userTz(await getUser(uid)), calHost(req))]), `${fileSafe(ev.title)}.ics`);
+  });
+
+  /* Suscripción: un enlace secreto que el calendario del móvil consulta solo y mantiene al día. */
+  async function calendarToken(uid, renew = false) {
+    const u = await getUser(uid);
+    if (u.calendar_token && !renew) return u.calendar_token;
+    const token = crypto.randomBytes(24).toString('base64url');
+    await db.run('UPDATE users SET calendar_token = ? WHERE id = ?', [token, uid]);
+    return token;
+  }
+  route('GET', '/me/calendar', async ({ uid }) => ({ token: await calendarToken(uid) }));
+  route('POST', '/me/calendar/reset', async ({ uid }) => ({ token: await calendarToken(uid, true) }));
+  route('GET', '/cal/:token', async ({ params, req }) => {
+    const token = String(params.token).replace(/\.ics$/i, '');
+    const u = token.length >= 20 ? await db.get('SELECT * FROM users WHERE calendar_token = ?', [token]) : null;
+    if (!u || u.suspended_at) throw notFound('Calendario no encontrado');
+    const since = new Date(Date.now() - 60 * 86400000).toISOString();
+    const items = await db.all("SELECT * FROM items WHERE user_id = ? AND type = 'exam' AND done = 0 AND due_at >= ? ORDER BY due_at", [u.id, since]);
+    const events = await db.all('SELECT * FROM events WHERE user_id = ? AND done = 0 AND COALESCE(end_at, start_at) >= ? ORDER BY start_at', [u.id, since]);
+    const subjects = new Map((await db.all('SELECT * FROM subjects WHERE user_id = ?', [u.id])).map((s) => [s.id, s]));
+    const tz = userTz(u);
+    const host = calHost(req);
+    return icsFile(ics.calendar([...items.map((i) => ics.itemEvent(i, subjects.get(i.subject_id), tz, host)), ...events.map((e) => ics.eventEvent(e, tz, host))], 'Kairos'), 'kairos.ics', true);
+  }, { auth: false });
   route('POST', '/items', async ({ uid, body }) => {
     const d = await itemData(uid, body);
     const id = await db.tx(async (q) => {
@@ -1283,7 +1326,12 @@ async function main() {
     const body = req.method === 'GET' ? {} : await readBody(req);
     const data = await r.handler({ req, res, body, params, uid });
     if (data && data.__binary) {
-      res.writeHead(200, { 'Content-Type': data.type, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+      res.writeHead(200, {
+        'Content-Type': data.type,
+        'Cache-Control': data.cache || 'private, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+        ...(data.filename ? { 'Content-Disposition': `${data.inline ? 'inline' : 'attachment'}; filename="${data.filename}"` } : {}),
+      });
       res.end(data.__binary);
       return;
     }

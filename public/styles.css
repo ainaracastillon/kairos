@@ -920,3 +920,15 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 #cw-l::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid #333; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 #cw-l::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 2px solid #333; }
 #cw-hex { font-family: ui-monospace, Menlo, monospace; text-transform: lowercase; }
+
+/* ---------- Añadir al calendario del móvil ---------- */
+.card-actions { display: flex; align-items: flex-start; gap: 2px; flex: none; }
+.cal-btn .i { width: 19px; height: 19px; }
+.cal-opts { display: grid; gap: 10px; }
+.cal-opt { display: flex; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); color: var(--text); text-decoration: none; }
+.cal-opt:hover { border-color: var(--accent); }
+.cal-opt > .i { width: 26px; height: 26px; color: var(--accent); flex: none; }
+.cal-opt b { display: block; font-size: 15px; }
+.cal-opt small { color: var(--muted); font-size: 13px; }
+.cal-sub-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cal-sub-actions .btn { text-decoration: none; color: var(--text); }
