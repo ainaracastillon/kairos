@@ -534,7 +534,7 @@ function renderShell() {
       ${brand()}
       <nav class="tabs">${VIEWS.filter((v) => TAB_VIEWS.includes(v[0])).map(([id, ic, label, short]) => `<button data-view="${id}">${icon(ic)}<span class="long">${label}</span><span class="short">${short}</span></button>`).join('')}</nav>
       <div class="userbox">
-        <button class="btn refresh-btn" id="refresh-btn" title="Recargar la página" aria-label="Recargar la página">${icon('refresh')}<span class="long">Recargar</span></button>
+        <button class="icon-btn refresh-btn" id="refresh-btn" title="Actualizar" aria-label="Actualizar">${icon('refresh')}</button>
         <button class="user-btn" id="user-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" title="Tu cuenta">
           ${avatarHtml(state.user)}<span class="name">${esc(state.user.name)}</span>${icon('down')}
         </button>
