@@ -932,3 +932,9 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .cal-opt small { color: var(--muted); font-size: 13px; }
 .cal-sub-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cal-sub-actions .btn { text-decoration: none; color: var(--text); }
+
+/* ---------- Descargar la app ---------- */
+.install-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 14px; padding: 10px; border: 1px dashed var(--border-strong); border-radius: 10px; background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.install-link:hover { background: var(--surface-2); }
+.install-link .i, .user-menu [data-install] .i { width: 18px; height: 18px; }
+.install-steps { margin: 8px 0 4px; padding-left: 22px; display: grid; gap: 10px; line-height: 1.5; }

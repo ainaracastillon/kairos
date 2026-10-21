@@ -47,6 +47,7 @@ const ICONS = {
   exam: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5M10 12.5h5.5M10 16.5h5.5"/>',
   down: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
   event: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="m12 12.2 1.05 2.15 2.35.33-1.7 1.66.4 2.35-2.1-1.1-2.1 1.1.4-2.35-1.7-1.66 2.35-.33Z"/>',
+  install: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11.5l3 3 3-3M10.5 18.5h3"/>',
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
@@ -352,7 +353,8 @@ function renderAuth(mode = 'welcome', opts = {}) {
       <p class="hint auth-note">Se guarda en este dispositivo. Cuando quieras, crea una cuenta para verlo también en otros.</p>
       <div class="auth-divider"><span>¿Ya tienes cuenta?</span></div>
       <button class="btn auth-secondary" type="button" data-mode="login">Iniciar sesión</button>
-      <p class="hint auth-terms">Al empezar aceptas ${TERMS_LINKS}.</p>` : `
+      <p class="hint auth-terms">Al empezar aceptas ${TERMS_LINKS}.</p>
+      ${appInstalled() ? '' : `<button type="button" class="install-link" data-install>${icon('install')}Descargar la app en este ${isMobile() ? 'móvil' : 'ordenador'}</button>`}` : `
       ${isLogin && guest ? `<div class="status warn">${icon('alert')}<span>Si entras en una cuenta, lo que has hecho sin cuenta en este dispositivo se borrará. Para conservarlo, <a data-mode="upgrade">crea una cuenta con ello</a>.</span></div>` : ''}
       ${isLogin ? '' : '<label class="field"><span>Nombre</span><input type="text" name="name" autocomplete="name" required></label>'}
       <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" autocomplete="email" required></label>
@@ -541,6 +543,7 @@ function renderShell() {
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="events">${icon('event')}Eventos</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
+          ${appInstalled() ? '' : `<button role="menuitem" data-install>${icon('install')}Descargar la app</button>`}
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
           ${state.user.is_guest ? '' : `<hr>
@@ -2159,6 +2162,61 @@ const LEGAL_LIST_CARD = () => `
       </ul>
     </section>`;
 
+/* ============================================================
+   Descargar la app (instalarla en el móvil o el ordenador)
+   ============================================================ */
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+window.addEventListener('appinstalled', () => { installPrompt = null; toast('¡Kairos instalada! Ya la tienes con su icono.'); });
+function appInstalled() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone === true;
+}
+function installPlatform() {
+  const ua = navigator.userAgent;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) return 'ios';
+  if (/android/i.test(ua)) return 'android';
+  if (/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua)) return 'mac-safari';
+  if (/Firefox/.test(ua)) return 'firefox';
+  return 'desktop';
+}
+async function openInstall() {
+  if (installPrompt) {
+    const p = installPrompt;
+    installPrompt = null;
+    p.prompt();
+    const { outcome } = await p.userChoice.catch(() => ({}));
+    if (outcome === 'accepted') toast('Instalando Kairos…');
+    return;
+  }
+  const steps = {
+    ios: ['Abre Kairos en <b>Safari</b> (en otros navegadores también suele funcionar).', 'Pulsa el botón <b>Compartir</b> (el cuadrado con una flecha hacia arriba).', 'Elige <b>«Añadir a pantalla de inicio»</b> y pulsa <b>Añadir</b>.'],
+    android: ['Abre el menú del navegador (los <b>tres puntos ⋮</b>, arriba a la derecha).', 'Pulsa <b>«Instalar aplicación»</b> o <b>«Añadir a pantalla de inicio»</b>.', 'Confirma con <b>Instalar</b>.'],
+    'mac-safari': ['En la barra de menús, abre <b>Archivo</b>.', 'Elige <b>«Añadir al Dock»</b> y pulsa <b>Añadir</b>.'],
+    firefox: ['Firefox en ordenador no permite instalar apps web.', 'Abre <b>kairospace.onrender.com</b> en <b>Chrome</b> o <b>Edge</b> y pulsa «Descargar la app».'],
+    desktop: ['En la barra de direcciones, pulsa el icono de <b>instalar</b> (un monitor con una flecha), a la derecha.', 'O abre el menú del navegador (<b>⋮</b>) → <b>«Enviar, guardar y compartir» → «Instalar página como aplicación»</b> (en Edge: <b>Aplicaciones → Instalar este sitio como aplicación</b>).', 'Confirma con <b>Instalar</b>.'],
+  }[installPlatform()];
+  openModal(`
+    <div class="modal-head"><h2>Descargar Kairos</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <p class="hint" style="margin-top:0">Kairos se instala desde el navegador: tendrás su icono en la pantalla de inicio${isMobile() ? '' : ', el escritorio o el Dock'}, se abre en su propia ventana sin barras del navegador y puede enviarte notificaciones. No ocupa casi nada y siempre está actualizada.</p>
+    <ol class="install-steps">${steps.map((t) => `<li>${t}</li>`).join('')}</ol>
+    <div class="modal-foot"><button type="button" class="btn btn-primary" data-close>Entendido</button></div>`);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-install]');
+  if (!b) return;
+  e.preventDefault();
+  $('#user-menu')?.setAttribute('hidden', '');
+  openInstall();
+});
+
+const INSTALL_CARD = () => (appInstalled() ? '' : `
+    <section class="card">
+      <h2>Descargar la app</h2>
+      <p class="hint">Instala Kairos en este ${isMobile() ? 'móvil' : 'ordenador'} para abrirla desde su icono, en su propia ventana y con notificaciones.</p>
+      <button type="button" class="btn btn-primary" data-install>${icon('install')}Descargar Kairos</button>
+    </section>`);
+
 /** Apariencia: color de fondo de la app. La letra pasa a negro o blanco según el fondo. */
 const APPEARANCE_CARD = () => {
   const themes = window.kairosTheme?.list || [];
@@ -2310,6 +2368,7 @@ function guestAccountView() {
       </div>
       <p class="hint" style="margin:10px 0 0">Si inicias sesión con una cuenta que ya tienes, se abrirán los datos de esa cuenta y los de este dispositivo se borrarán.</p>
     </section>
+    ${INSTALL_CARD()}
     ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
     <section class="card danger-zone">
@@ -2376,6 +2435,7 @@ function accountView() {
       <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
     </section>
 
+    ${INSTALL_CARD()}
     ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
 

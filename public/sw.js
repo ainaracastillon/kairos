@@ -1,6 +1,28 @@
 /* Service worker de Kairos: recibe las notificaciones push y abre la app al pulsarlas. */
-self.addEventListener('install', () => self.skipWaiting());
+const SHELL = 'kairos-shell-v1';
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  // Copia mínima para que la app instalada abra aunque no haya conexión.
+  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/styles.css', '/app.js', '/theme.js', '/nozoom.js', '/icons/icon-192.png'])).catch(() => {}));
+});
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+// Siempre se usa la versión más reciente de internet; la copia guardada solo si no hay conexión.
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin || req.url.includes('/api/')) return;
+  event.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res.ok && (req.mode === 'navigate' || /\.(css|js|png|svg|woff2)$/.test(new URL(req.url).pathname))) {
+          const copy = res.clone();
+          caches.open(SHELL).then((c) => c.put(req.mode === 'navigate' ? '/' : req, copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(async () => (await caches.match(req.mode === 'navigate' ? '/' : req)) || Response.error())
+  );
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
