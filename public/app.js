@@ -201,6 +201,9 @@ const topOf = (s) => parentOf(s) || s;
 const subjectLabel = (s) => (!s ? '' : parentOf(s) ? `${parentOf(s).name} · ${s.name}` : s.name);
 const effRoom = (s) => s?.room || parentOf(s)?.room || '';
 const effTeacher = (s) => s?.teacher || parentOf(s)?.teacher || '';
+const effTeacherEmail = (s) => s?.teacher_email || parentOf(s)?.teacher_email || '';
+/** Correo del profesor/a como enlace que abre el correo del móvil u ordenador. */
+const teacherMail = (s) => { const m = effTeacherEmail(s); return m ? `<a class="mail-link" href="mailto:${esc(m)}" onclick="event.stopPropagation()">${icon('mail')}${esc(m)}</a>` : ''; };
 const itemById = (id) => state.items.find((i) => i.id === id);
 /** Días que muestra un horario (cada horario tiene los suyos). */
 const ttDays = (tt) => tt?.visible_days || state.user.visible_days || [1, 2, 3, 4, 5];
@@ -1858,6 +1861,7 @@ function subjectsView() {
           <h3>${esc(s.name)}<span class="abbr">${esc(shortName(s))}</span></h3>
           <div class="info">${icon('pin')}${s.room ? `Aula ${esc(s.room)}` : 'Sin aula'}</div>
           <div class="info">${icon('user')}${esc(s.teacher || 'Sin profesor asignado')}</div>
+          ${s.teacher_email ? `<div class="info">${teacherMail(s)}</div>` : ''}
           <div class="info">${icon('clock')}${plural(hours(s.id), 'clase', 'clases')} a la semana</div>
           ${s.start_date || s.end_date ? `<div class="info">${icon('calendar')}${esc(datesLabel(s.start_date, s.end_date))}${s.end_date && s.end_date < dateKey(new Date()) ? ' · <b>terminada</b>' : s.start_date && s.start_date > dateKey(new Date()) ? ' · <b>aún no empieza</b>' : ''}</div>` : ''}
           <div class="subs">
@@ -1887,7 +1891,7 @@ async function deleteSubjectFlow(s) {
 function openSubjectModal(subject, parent = null) {
   parent = parent || parentOf(subject);
   const s = subject || {
-    name: '', short_name: '', room: '', teacher: '',
+    name: '', short_name: '', room: '', teacher: '', teacher_email: '',
     color: parent ? parent.color : PALETTE[(ttSubjects(activeTT().id).length * 5) % PALETTE.length],
   };
   const inherit = (value, label) => (parent ? `Igual que ${parent.name}${value ? ` (${value})` : ''}` : label);
@@ -1903,6 +1907,7 @@ function openSubjectModal(subject, parent = null) {
         <label class="field"><span>Aula</span><input type="text" name="room" value="${esc(s.room)}" placeholder="${esc(inherit(parent?.room, 'B-12'))}"></label>
         <label class="field"><span>Profesor/a</span><input type="text" name="teacher" value="${esc(s.teacher)}" placeholder="${esc(inherit(parent?.teacher, 'Ana García'))}"></label>
       </div>
+      <label class="field"><span>Correo del profesor/a (opcional)</span><input type="email" name="teacher_email" value="${esc(s.teacher_email || '')}" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" maxlength="200" placeholder="${esc(inherit(parent?.teacher_email, 'ana.garcia@universidad.es'))}"></label>
       ${parent ? `<p class="hint" style="margin:-6px 0 14px">Si dejas el aula o el profesor vacíos, se usan los de «${esc(parent.name)}».</p>` : ''}
       <div class="row">
         <label class="field"><span>Empieza el (opcional)</span><input type="date" name="start_date" value="${esc(s.start_date || '')}"></label>
@@ -3011,7 +3016,7 @@ function dayDetail(key, inModal, extra = '') {
       ${classes.length ? `<div class="group-title" style="margin-top:0">Clases</div><div class="day-classes">${mergeDayClasses(classes).map(({ start, end, subject, room }) => `
         <div class="day-class" style="--c:${subject.color}">
           <span class="time">${start} – ${end}</span>
-          <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}</div></div>
+          <div><b>${esc(subjectLabel(subject))}</b><div class="info">${room ? `<span>${icon('pin')}${esc(room)}</span>` : ''}${effTeacher(subject) ? `<span>${icon('user')}${esc(effTeacher(subject))}</span>` : ''}${effTeacherEmail(subject) ? `<span>${teacherMail(subject)}</span>` : ''}</div></div>
         </div>`).join('')}</div>` : ''}
       ${inModal && dayEvents.length ? `<div class="group-title">Eventos</div>${dayEvents.map(eventCard).join('')}` : ''}
       ${inModal && items.length ? `<div class="group-title">Tareas y exámenes</div><div class="day-classes">${items.map((i) => dayItemRow(i)).join('')}</div>` : ''}

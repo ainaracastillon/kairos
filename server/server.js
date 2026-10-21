@@ -115,7 +115,7 @@ const fmtTimetable = (t) => ({
   visible_days: JSON.parse(t.visible_days), background: t.background,
 });
 const fmtSlot = (s) => ({ id: s.id, timetable_id: s.timetable_id, start_time: s.start_time, end_time: s.end_time, label: s.label, is_break: Boolean(s.is_break) });
-const fmtSubject = (s) => ({ id: s.id, timetable_id: s.timetable_id, parent_id: s.parent_id ?? null, name: s.name, short_name: s.short_name, room: s.room, teacher: s.teacher, color: s.color, start_date: s.start_date || null, end_date: s.end_date || null });
+const fmtSubject = (s) => ({ id: s.id, timetable_id: s.timetable_id, parent_id: s.parent_id ?? null, name: s.name, short_name: s.short_name, room: s.room, teacher: s.teacher, teacher_email: s.teacher_email || '', color: s.color, start_date: s.start_date || null, end_date: s.end_date || null });
 const fmtEntry = (e) => ({ id: e.id, slot_id: e.slot_id, day: e.day, subject_id: e.subject_id, room_override: e.room_override });
 const fmtEvent = (e) => ({
   id: e.id, timetable_id: e.timetable_id, title: e.title, location: e.location, description: e.description, color: e.color,
@@ -146,7 +146,7 @@ async function main() {
     await db.run(`ALTER TABLE users ADD COLUMN ${col}`).catch(() => {});
   }
   await db.run('ALTER TABLE contact_messages ADD COLUMN resolved_at TEXT').catch(() => {});
-  for (const col of ['start_date TEXT', 'end_date TEXT']) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
+  for (const col of ['start_date TEXT', 'end_date TEXT', "teacher_email TEXT NOT NULL DEFAULT ''"]) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
   await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
   await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
   await db.run("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'auto'").catch(() => {});
@@ -207,8 +207,8 @@ async function main() {
       const subjMap = new Map();
       const subs = await q.all('SELECT * FROM subjects WHERE timetable_id = ? ORDER BY (CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END), id', [copyFrom.id]);
       for (const s of subs) {
-        const r = await q.run('INSERT INTO subjects (user_id, timetable_id, parent_id, name, short_name, room, teacher, color, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-          [uid, ttId, s.parent_id ? subjMap.get(s.parent_id) ?? null : null, s.name, s.short_name, s.room, s.teacher, s.color, s.start_date || null, s.end_date || null]);
+        const r = await q.run('INSERT INTO subjects (user_id, timetable_id, parent_id, name, short_name, room, teacher, teacher_email, color, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+          [uid, ttId, s.parent_id ? subjMap.get(s.parent_id) ?? null : null, s.name, s.short_name, s.room, s.teacher, s.teacher_email || '', s.color, s.start_date || null, s.end_date || null]);
         subjMap.set(s.id, r.id);
       }
       const entries = await q.all('SELECT e.* FROM schedule e JOIN slots s ON s.id = e.slot_id WHERE s.timetable_id = ?', [copyFrom.id]);
@@ -1021,11 +1021,13 @@ async function main() {
       short_name: 'short_name' in body ? str(body.short_name, 12) : prev.short_name ?? '',
       room: 'room' in body ? str(body.room, 60) : prev.room ?? '',
       teacher: 'teacher' in body ? str(body.teacher, 120) : prev.teacher ?? '',
+      teacher_email: 'teacher_email' in body ? str(body.teacher_email, 200).toLowerCase() : prev.teacher_email ?? '',
       color: 'color' in body ? String(body.color) : prev.color,
       start_date: 'start_date' in body ? optDate(body.start_date) : prev.start_date ?? null,
       end_date: 'end_date' in body ? optDate(body.end_date) : prev.end_date ?? null,
     };
     if (!d.name) throw bad('Escribe el nombre de la asignatura');
+    if (d.teacher_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.teacher_email)) throw bad('El correo del profesor/a no es válido');
     if (d.start_date && d.end_date && d.end_date < d.start_date) throw bad('La fecha de fin debe ser posterior a la de inicio');
     if (!COLOR_RE.test(d.color || '')) throw bad('Color no válido');
     d.color = d.color.toLowerCase();
@@ -1044,15 +1046,15 @@ async function main() {
     } else {
       ttId = (await ownTimetable(uid, body.timetable_id)).id;
     }
-    const r = await db.run('INSERT INTO subjects (user_id, timetable_id, parent_id, name, short_name, room, teacher, color, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [uid, ttId, parentId, d.name, d.short_name, d.room, d.teacher, d.color, d.start_date, d.end_date]);
+    const r = await db.run('INSERT INTO subjects (user_id, timetable_id, parent_id, name, short_name, room, teacher, teacher_email, color, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [uid, ttId, parentId, d.name, d.short_name, d.room, d.teacher, d.teacher_email, d.color, d.start_date, d.end_date]);
     return fmtSubject(await db.get('SELECT * FROM subjects WHERE id = ?', [r.id]));
   });
   route('PUT', '/subjects/:id', async ({ uid, body, params }) => {
     const s = await db.get('SELECT * FROM subjects WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
     if (!s) throw notFound('Asignatura no encontrada');
     const d = subjectData(body, s);
-    await db.run('UPDATE subjects SET name = ?, short_name = ?, room = ?, teacher = ?, color = ?, start_date = ?, end_date = ? WHERE id = ?', [d.name, d.short_name, d.room, d.teacher, d.color, d.start_date, d.end_date, s.id]);
+    await db.run('UPDATE subjects SET name = ?, short_name = ?, room = ?, teacher = ?, teacher_email = ?, color = ?, start_date = ?, end_date = ? WHERE id = ?', [d.name, d.short_name, d.room, d.teacher, d.teacher_email, d.color, d.start_date, d.end_date, s.id]);
     return fmtSubject(await db.get('SELECT * FROM subjects WHERE id = ?', [s.id]));
   });
   route('DELETE', '/subjects/:id', async ({ uid, params }) => {
