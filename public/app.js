@@ -2192,7 +2192,7 @@ async function openInstall() {
   const steps = {
     ios: ['Abre Kairos en <b>Safari</b> (en otros navegadores también suele funcionar).', 'Pulsa el botón <b>Compartir</b> (el cuadrado con una flecha hacia arriba).', 'Elige <b>«Añadir a pantalla de inicio»</b> y pulsa <b>Añadir</b>.'],
     android: ['Abre el menú del navegador (los <b>tres puntos ⋮</b>, arriba a la derecha).', 'Pulsa <b>«Instalar aplicación»</b> o <b>«Añadir a pantalla de inicio»</b>.', 'Confirma con <b>Instalar</b>.'],
-    'mac-safari': ['En la barra de menús, abre <b>Archivo</b>.', 'Elige <b>«Añadir al Dock»</b> y pulsa <b>Añadir</b>.'],
+    'mac-safari': ['Pulsa el botón <b>Compartir</b> de Safari (el cuadrado con una flecha hacia arriba, arriba a la derecha) o abre <b>Archivo → Compartir</b>.', 'Elige <b>«Añadir al Dock»</b> y pulsa <b>Añadir</b>. (En versiones anteriores de Safari está directamente en el menú <b>Archivo</b>.)', 'Si no te aparece, tu Mac es anterior a macOS Sonoma: abre Kairos en <b>Chrome</b> o <b>Edge</b> y pulsa «Descargar la app».'],
     firefox: ['Firefox en ordenador no permite instalar apps web.', 'Abre <b>kairospace.onrender.com</b> en <b>Chrome</b> o <b>Edge</b> y pulsa «Descargar la app».'],
     desktop: ['En la barra de direcciones, pulsa el icono de <b>instalar</b> (un monitor con una flecha), a la derecha.', 'O abre el menú del navegador (<b>⋮</b>) → <b>«Enviar, guardar y compartir» → «Instalar página como aplicación»</b> (en Edge: <b>Aplicaciones → Instalar este sitio como aplicación</b>).', 'Confirma con <b>Instalar</b>.'],
   }[installPlatform()];
