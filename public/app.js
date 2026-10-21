@@ -2210,12 +2210,14 @@ document.addEventListener('click', (e) => {
   openInstall();
 });
 
-const INSTALL_CARD = () => (appInstalled() ? '' : `
+const INSTALL_CARD = () => `
     <section class="card">
       <h2>Descargar la app</h2>
-      <p class="hint">Instala Kairos en este ${isMobile() ? 'móvil' : 'ordenador'} para abrirla desde su icono, en su propia ventana y con notificaciones.</p>
-      <button type="button" class="btn btn-primary" data-install>${icon('install')}Descargar Kairos</button>
-    </section>`);
+      ${appInstalled()
+        ? '<p class="hint" style="margin:0">Ya estás usando Kairos como aplicación en este dispositivo.</p>'
+        : `<p class="hint">Instala Kairos en este ${isMobile() ? 'móvil' : 'ordenador'} para abrirla desde su icono, en su propia ventana, como cualquier otra aplicación.</p>
+      <button type="button" class="btn btn-primary" data-install>${icon('install')}Descargar Kairos</button>`}
+    </section>`;
 
 /** Apariencia: color de fondo de la app. La letra pasa a negro o blanco según el fondo. */
 const APPEARANCE_CARD = () => {
