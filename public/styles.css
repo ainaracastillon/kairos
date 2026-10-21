@@ -852,8 +852,9 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .ev-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; font-size: 15px; padding: 2px 0 6px; }
 
 /* ---------- Actualizar ---------- */
-.refresh-btn { color: var(--muted); }
-.refresh-btn .i { width: 20px; height: 20px; }
+.refresh-btn { color: var(--text); gap: 6px; padding: 7px 12px; border-radius: 999px; font-weight: 600; }
+.refresh-btn .i { width: 18px; height: 18px; }
+@media (max-width: 700px) { .refresh-btn { padding: 8px; } .refresh-btn .long { display: none; } .refresh-btn .i { width: 20px; height: 20px; } }
 .refresh-btn.spinning .i { animation: kspin .8s linear infinite; }
 @keyframes kspin { to { transform: rotate(360deg); } }
 
