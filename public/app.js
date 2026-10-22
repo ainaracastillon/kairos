@@ -1553,13 +1553,33 @@ function openAddToCalendar(kind, id) {
   const icsUrl = `/api/${kind === 'item' ? 'items' : 'events'}/${id}/ics`;
   const android = /android/i.test(navigator.userAgent);
   const apple = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent);
-  const optApple = `<a class="cal-opt" href="${icsUrl}" ${apple ? '' : 'download'}>${icon('calendar')}<span><b>Calendario de Apple</b><small>iPhone, iPad y Mac. También Outlook y otros calendarios.</small></span></a>`;
-  const optGoogle = `<a class="cal-opt" href="${esc(gUrl)}" target="_blank" rel="noopener">${icon('calendar')}<span><b>Google Calendar</b><small>Android y cualquier dispositivo con tu cuenta de Google.</small></span></a>`;
+  const copyApple = `<a class="cal-opt small" href="${icsUrl}" ${apple ? '' : 'download'}>${icon('calendar')}<span><b>Solo este, en Apple</b><small>iPhone, iPad, Mac y Outlook.</small></span></a>`;
+  const copyGoogle = `<a class="cal-opt small" href="${esc(gUrl)}" target="_blank" rel="noopener">${icon('calendar')}<span><b>Solo este, en Google Calendar</b><small>Android.</small></span></a>`;
   openModal(`
     <div class="modal-head"><div class="head-text"><h2>Añadir al calendario</h2><small class="hint">${esc(title)}</small></div><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
-    <div class="cal-opts">${android ? optGoogle + optApple : optApple + optGoogle}</div>
-    <p class="hint" style="margin:12px 0 0">Se añade una copia con la fecha, la hora, el aula o lugar, las notas y el aviso. Para que todos tus exámenes y eventos se añadan y se actualicen solos, usa «Calendario del móvil» en Ajustes.</p>`, (root) => {
+    <div class="cal-sync">
+      <b>${icon('refresh')}Sincronizado (recomendado)</b>
+      <p class="hint">Añade todos tus exámenes y eventos de una vez. Si cambias una fecha, una hora o el aula en Kairos, <b>se cambia solo</b> en el calendario del móvil, y lo que borras desaparece.</p>
+      <div class="cal-opts" id="cal-sync-opts"><span class="hint">Preparando…</span></div>
+    </div>
+    <details class="cal-copy">
+      <summary>Añadir solo este ${kind === 'item' ? 'examen' : 'evento'} (no se actualiza)</summary>
+      <p class="hint">Se guarda una copia. Si luego cambias la fecha en Kairos, tendrás que volver a añadirlo${apple ? ' (en Apple se sustituye la copia anterior)' : ''}.</p>
+      <div class="cal-opts">${android ? copyGoogle + copyApple : copyApple + copyGoogle}</div>
+    </details>`, async (root) => {
     root.addEventListener('click', (e) => { if (e.target.closest('.cal-opt')) setTimeout(closeModal, 300); });
+    try {
+      const { token } = await api('GET', '/me/calendar');
+      const webcal = `${location.origin}/api/cal/${token}.ics`.replace(/^https?:/, 'webcal:');
+      const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+      const syncApple = `<a class="cal-opt" href="${webcal}">${icon('calendar')}<span><b>Calendario de Apple</b><small>iPhone, iPad y Mac. Se actualiza cada 15 minutos.</small></span></a>`;
+      const syncGoogle = `<a class="cal-opt" href="${google}" target="_blank" rel="noopener">${icon('calendar')}<span><b>Google Calendar</b><small>Android. Google lo actualiza varias veces al día.</small></span></a>`;
+      const box = $('#cal-sync-opts', root);
+      if (box) box.innerHTML = android ? syncGoogle + syncApple : syncApple + syncGoogle;
+    } catch (err) {
+      const box = $('#cal-sync-opts', root);
+      if (box) box.innerHTML = `<span class="hint">${esc(err.message)}</span>`;
+    }
   });
 }
 document.addEventListener('click', (e) => {
@@ -2030,7 +2050,7 @@ function settingsView() {
 
     <section class="card" id="cal-sub">
       <h2>Calendario del móvil</h2>
-      <p class="hint">Añade todos tus exámenes y eventos al calendario de tu móvil de una vez. Se actualizan solos cuando los cambias en Kairos (Apple lo revisa cada hora; Google, varias veces al día).</p>
+      <p class="hint">Añade todos tus exámenes y eventos al calendario de tu móvil de una vez. Se actualizan solos cuando los cambias en Kairos (Apple lo revisa cada 15 minutos; Google, varias veces al día).</p>
       <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
     </section>
 

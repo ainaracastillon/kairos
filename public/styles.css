@@ -950,3 +950,12 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .skip-chip button { display: grid; place-items: center; width: 22px; height: 22px; border: none; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
 .skip-chip button:hover { background: var(--border); color: var(--text); }
 .skip-chip .i { width: 13px; height: 13px; }
+.cal-sync { border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); border-radius: 12px; padding: 14px; }
+.cal-sync > b { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.cal-sync > b .i { width: 18px; height: 18px; color: var(--accent); }
+.cal-sync .hint { margin: 6px 0 12px; }
+.cal-copy { margin-top: 14px; }
+.cal-copy summary { cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600; padding: 4px 0; }
+.cal-copy .hint { margin: 6px 0 10px; }
+.cal-opt.small { padding: 10px 12px; }
+.cal-opt.small > .i { width: 20px; height: 20px; }

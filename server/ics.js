@@ -28,7 +28,7 @@ function fold(line) {
 }
 
 function vevent({ uid, title, start, end, allDay, location, description, reminder, tz, url }) {
-  const lines = ['BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${utc(Date.now())}`];
+  const lines = ['BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${utc(Date.now())}`, `SEQUENCE:${Math.floor(Date.now() / 1000) - 1700000000}`, `LAST-MODIFIED:${utc(Date.now())}`];
   if (allDay) {
     const s = localDate(start, tz);
     const e = end ? localDate(end, tz) : s;
@@ -66,7 +66,7 @@ function eventEvent(ev, tz, host) {
 function calendar(vevents, name = 'Kairos') {
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kairos//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-    `X-WR-CALNAME:${esc(name)}`, 'X-WR-CALDESC:Exámenes y eventos de Kairos', 'REFRESH-INTERVAL;VALUE=DURATION:PT1H', 'X-PUBLISHED-TTL:PT1H',
+    `X-WR-CALNAME:${esc(name)}`, 'X-WR-CALDESC:Exámenes y eventos de Kairos', 'REFRESH-INTERVAL;VALUE=DURATION:PT15M', 'X-PUBLISHED-TTL:PT15M',
     ...vevents.flat(), 'END:VCALENDAR',
   ];
   return `${lines.map(fold).join('\r\n')}\r\n`;
