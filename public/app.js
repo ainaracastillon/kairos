@@ -222,6 +222,7 @@ function ttCovers(tt, d) {
 function subjectActiveOn(s, k) {
   for (const x of [s, parentOf(s)]) {
     if (x && ((x.start_date && k < x.start_date) || (x.end_date && k > x.end_date))) return false;
+    if (x?.skip_dates?.includes(k)) return false; // festivo o día sin clase
   }
   return true;
 }
@@ -1862,6 +1863,7 @@ function subjectsView() {
           <div class="info">${icon('pin')}${s.room ? `Aula ${esc(s.room)}` : 'Sin aula'}</div>
           <div class="info">${icon('user')}${esc(s.teacher || 'Sin profesor asignado')}</div>
           ${s.teacher_email ? `<div class="info">${teacherMail(s)}</div>` : ''}
+          ${s.skip_dates?.length ? `<div class="info" title="${esc(s.skip_dates.map((k) => parseKey(k).toLocaleDateString('es-ES')).join(', '))}">${icon('calendar')}Sin clase: ${esc(s.skip_dates.slice(0, 3).map((k) => parseKey(k).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })).join(', '))}${s.skip_dates.length > 3 ? ` y ${s.skip_dates.length - 3} más` : ''}</div>` : ''}
           <div class="info">${icon('clock')}${plural(hours(s.id), 'clase', 'clases')} a la semana</div>
           ${s.start_date || s.end_date ? `<div class="info">${icon('calendar')}${esc(datesLabel(s.start_date, s.end_date))}${s.end_date && s.end_date < dateKey(new Date()) ? ' · <b>terminada</b>' : s.start_date && s.start_date > dateKey(new Date()) ? ' · <b>aún no empieza</b>' : ''}</div>` : ''}
           <div class="subs">
@@ -1891,7 +1893,7 @@ async function deleteSubjectFlow(s) {
 function openSubjectModal(subject, parent = null) {
   parent = parent || parentOf(subject);
   const s = subject || {
-    name: '', short_name: '', room: '', teacher: '', teacher_email: '',
+    name: '', short_name: '', room: '', teacher: '', teacher_email: '', skip_dates: [],
     color: parent ? parent.color : PALETTE[(ttSubjects(activeTT().id).length * 5) % PALETTE.length],
   };
   const inherit = (value, label) => (parent ? `Igual que ${parent.name}${value ? ` (${value})` : ''}` : label);
@@ -1914,6 +1916,11 @@ function openSubjectModal(subject, parent = null) {
         <label class="field"><span>Termina el (opcional)</span><input type="date" name="end_date" value="${esc(s.end_date || '')}"></label>
       </div>
       <p class="hint" style="margin:-6px 0 14px">Sus clases solo aparecerán entre esas fechas${parent && (parent.start_date || parent.end_date) ? ` y dentro de las de «${esc(parent.name)}» (${esc(datesLabel(parent.start_date, parent.end_date).toLowerCase())})` : ''}. Déjalas vacías si dura todo el horario.</p>
+      <div class="field"><span>Días sin clase (festivos, puentes…)</span>
+        <div class="skip-add"><input type="date" id="skip-date"><button type="button" class="btn" id="skip-add">${icon('plus')}Añadir</button></div>
+        <div class="skip-list" id="skip-list"></div>
+        ${parent ? `<small class="hint">También se tienen en cuenta los días sin clase de «${esc(parent.name)}».</small>` : '<small class="hint">Esos días no aparecerán sus clases en el mes ni en el detalle del día.</small>'}
+      </div>
       <div class="field"><span>Color</span>
         <div class="swatches">
           ${PALETTE.map((c) => `<button type="button" class="swatch ${c === s.color ? 'active' : ''}" data-color="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}
@@ -1928,6 +1935,28 @@ function openSubjectModal(subject, parent = null) {
     </form>`, (root) => {
     const form = $('#subject-form', root);
     if (!window.matchMedia('(pointer: coarse)').matches) $('input[name=name]', form).focus();
+    // Días sin clase
+    let skips = [...(s.skip_dates || [])];
+    const fmtSkip = (k) => parseKey(k).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const drawSkips = () => {
+      $('#skip-list', form).innerHTML = skips.length
+        ? skips.map((k) => `<span class="skip-chip">${esc(fmtSkip(k))}<button type="button" data-skip-del="${k}" aria-label="Quitar ${esc(fmtSkip(k))}">${icon('x')}</button></span>`).join('')
+        : '<small class="hint">Ninguno.</small>';
+    };
+    drawSkips();
+    const addSkip = () => {
+      const v = $('#skip-date', form).value;
+      if (!v) { $('#skip-date', form).focus(); return; }
+      if (!skips.includes(v)) skips = [...skips, v].sort();
+      $('#skip-date', form).value = '';
+      drawSkips();
+    };
+    $('#skip-add', form).onclick = addSkip;
+    $('#skip-date', form).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSkip(); } });
+    $('#skip-list', form).onclick = (e) => {
+      const b = e.target.closest('[data-skip-del]');
+      if (b) { skips = skips.filter((k) => k !== b.dataset.skipDel); drawSkips(); }
+    };
     const del = $('#subj-delete', form);
     if (del) del.onclick = async () => { if (await deleteSubjectFlow(subject)) closeModal(); };
     $('.swatches', form).onclick = (e) => {
@@ -1941,6 +1970,10 @@ function openSubjectModal(subject, parent = null) {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form));
       data.start_date = data.start_date || null;
+      // Si hay una fecha escrita sin pulsar «Añadir», también cuenta.
+      const pending = $('#skip-date', form).value;
+      if (pending && !skips.includes(pending)) skips = [...skips, pending].sort();
+      data.skip_dates = skips;
       data.end_date = data.end_date || null;
       if (data.start_date && data.end_date && data.end_date < data.start_date) { $('#form-error', form).textContent = 'La fecha de fin debe ser posterior a la de inicio'; return; }
       try {
