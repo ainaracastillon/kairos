@@ -1609,7 +1609,7 @@ function openAddToCalendar(kind, id) {
     <div class="modal-head"><div class="head-text"><h2>Añadir al calendario</h2><small class="hint">${esc(title)}</small></div><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
     <div class="cal-sync">
       <b>${icon('refresh')}Sincronizado (recomendado)</b>
-      <p class="hint">Añade todos tus exámenes y eventos de una vez. Si cambias una fecha, una hora o el aula en Kairos, <b>se cambia solo</b> en el calendario del móvil, y lo que borras desaparece.</p>
+      <p class="hint">Añade todos tus exámenes y eventos de una vez. Si cambias una fecha, una hora o el aula en Kairos, <b>se cambia solo</b> en el calendario del móvil.</p>
       <div class="cal-opts" id="cal-sync-opts"><span class="hint">Preparando…</span></div>
     </div>
     <details class="cal-copy">
@@ -2134,7 +2134,7 @@ ${state.user.is_guest ? `<div class="status info">${icon('mail')}<span>Los aviso
 const CAL_SYNC_CARD = () => `
     <section class="card cal-sub-card" id="cal-sub">
       <h2>${icon('calendar')}Calendario del móvil</h2>
-      <p class="hint">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil: los que ya tienes y los que crees a partir de ahora. Si cambias una fecha, una hora o el aula en Kairos, se cambia solo; lo que borras o marcas como hecho desaparece.</p>
+      <p class="hint">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil: los que ya tienes y los que crees a partir de ahora. Si cambias una fecha, una hora o el aula en Kairos, se cambia solo. Lo que marques como hecho o borres en Kairos se queda en el calendario del móvil.</p>
       <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
     </section>`;
 function openCalendarSync() {

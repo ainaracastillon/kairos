@@ -91,6 +91,13 @@ CREATE TABLE IF NOT EXISTS item_files (
   data TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cal_archive (
+  id {PK},
+  user_id INTEGER NOT NULL,
+  uid TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS checklist (
   id {PK},
   item_id INTEGER NOT NULL,
