@@ -124,10 +124,11 @@ const fmtEvent = (e) => ({
   all_day: Boolean(e.all_day), start_at: e.start_at, end_at: e.end_at || null,
   reminder_minutes: e.reminder_minutes ?? null, reminder_sent: Boolean(e.reminder_sent), done: Boolean(e.done),
 });
-const fmtItem = (i, checklist) => ({
+const fmtItem = (i, checklist, files = []) => ({
   id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description, room: i.room || '',
   due_at: i.due_at, reminder_minutes: i.reminder_minutes ?? null, reminder_sent: Boolean(i.reminder_sent), done: Boolean(i.done),
   checklist: checklist.map((c) => ({ id: c.id, text: c.text, done: Boolean(c.done) })),
+  files: files.map((f) => ({ id: f.id, name: f.name, size: Number(f.size) })),
 });
 
 const collator = new Intl.Collator('es', { sensitivity: 'base' });
@@ -173,12 +174,16 @@ async function main() {
     const checks = await db.all('SELECT c.* FROM checklist c JOIN items i ON i.id = c.item_id WHERE i.user_id = ? ORDER BY c.item_id, c.position, c.id', [uid]);
     const by = new Map();
     for (const c of checks) { if (!by.has(c.item_id)) by.set(c.item_id, []); by.get(c.item_id).push(c); }
-    return items.map((i) => fmtItem(i, by.get(i.id) || []));
+    const files = await db.all('SELECT id, item_id, name, size FROM item_files WHERE user_id = ? ORDER BY id', [uid]);
+    const fb = new Map();
+    for (const f of files) { if (!fb.has(f.item_id)) fb.set(f.item_id, []); fb.get(f.item_id).push(f); }
+    return items.map((i) => fmtItem(i, by.get(i.id) || [], fb.get(i.id) || []));
   }
   async function itemOut(id, q = db) {
     const i = await q.get('SELECT * FROM items WHERE id = ?', [id]);
     const checks = await q.all('SELECT * FROM checklist WHERE item_id = ? ORDER BY position, id', [id]);
-    return fmtItem(i, checks);
+    const files = await q.all('SELECT id, item_id, name, size FROM item_files WHERE item_id = ? ORDER BY id', [id]);
+    return fmtItem(i, checks, files);
   }
   async function userOut(uid) {
     const u = await getUser(uid);
@@ -294,10 +299,10 @@ async function main() {
      Rutas de la API
      ============================================================ */
   const routes = [];
-  const route = (method, pattern, handler, { auth = true } = {}) => {
+  const route = (method, pattern, handler, { auth = true, maxBody = 1_000_000 } = {}) => {
     const keys = [];
     const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-    routes.push({ method, re, keys, handler, auth });
+    routes.push({ method, re, keys, handler, auth, maxBody });
   };
 
   /* ---------- cuenta ---------- */
@@ -518,7 +523,7 @@ async function main() {
     if (target.role === 'superadmin' || target.email === SUPERADMIN_EMAIL) throw new HttpError(403, 'La cuenta de la superadministradora no se puede eliminar.');
     await db.tx(async (q) => {
       await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE user_id = ?)', [uid]);
-      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions', 'password_resets']) {
+      for (const t of ['items', 'events', 'schedule', 'subjects', 'slots', 'timetables', 'push_subscriptions', 'sessions', 'password_resets', 'item_files']) {
         await q.run(`DELETE FROM ${t} WHERE user_id = ?`, [uid]);
       }
       await q.run('UPDATE contact_messages SET user_id = NULL WHERE user_id = ?', [uid]);
@@ -938,6 +943,7 @@ async function main() {
       await q.run('DELETE FROM slots WHERE timetable_id = ?', [tt.id]);
       await q.run('DELETE FROM subjects WHERE timetable_id = ?', [tt.id]);
       await q.run('DELETE FROM checklist WHERE item_id IN (SELECT id FROM items WHERE timetable_id = ?)', [tt.id]);
+      await q.run('DELETE FROM item_files WHERE item_id IN (SELECT id FROM items WHERE timetable_id = ?)', [tt.id]);
       await q.run('DELETE FROM items WHERE timetable_id = ?', [tt.id]);
       await q.run('DELETE FROM events WHERE timetable_id = ?', [tt.id]);
       await q.run('DELETE FROM timetables WHERE id = ?', [tt.id]);
@@ -1170,11 +1176,40 @@ async function main() {
     });
     return itemOut(prev.id);
   });
+  /* ---------- PDF adjuntos a tareas y exámenes (instrucciones, enunciados…) ---------- */
+  const MAX_PDF = 5 * 1024 * 1024;
+  const MAX_FILES = 5;
+  route('POST', '/items/:id/files', async ({ uid, params, body }) => {
+    const it = await db.get('SELECT id FROM items WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
+    if (!it) throw notFound('Tarea no encontrada');
+    const m = String(body.data || '').match(/^data:application\/pdf;base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw bad('Solo se pueden adjuntar archivos PDF.');
+    const bytes = Buffer.from(m[1], 'base64');
+    if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') throw bad('El archivo no es un PDF válido.');
+    if (bytes.length > MAX_PDF) throw bad('El PDF es demasiado grande (máximo 5 MB).');
+    if (await count('SELECT COUNT(*) AS n FROM item_files WHERE item_id = ?', [it.id]) >= MAX_FILES) throw bad(`Puedes adjuntar como mucho ${MAX_FILES} PDF por tarea.`);
+    let name = str(body.name, 150).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim() || 'instrucciones.pdf';
+    if (!/\.pdf$/i.test(name)) name += '.pdf';
+    await db.run('INSERT INTO item_files (user_id, item_id, name, mime, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [uid, it.id, name, 'application/pdf', bytes.length, m[1], nowIso()]);
+    return itemOut(it.id);
+  }, { maxBody: 7_500_000 });
+  route('GET', '/items/:id/files/:fid', async ({ uid, params }) => {
+    const f = await db.get('SELECT * FROM item_files WHERE id = ? AND item_id = ? AND user_id = ?', [Number(params.fid), Number(params.id), uid]);
+    if (!f) throw notFound('Archivo no encontrado');
+    return { __binary: Buffer.from(f.data, 'base64'), type: 'application/pdf', filename: f.name.replace(/"/g, ''), inline: true, cache: 'private, no-cache' };
+  });
+  route('DELETE', '/items/:id/files/:fid', async ({ uid, params }) => {
+    const r = await db.run('DELETE FROM item_files WHERE id = ? AND item_id = ? AND user_id = ?', [Number(params.fid), Number(params.id), uid]);
+    if (!r.changes) throw notFound('Archivo no encontrado');
+    return itemOut(Number(params.id));
+  });
+
   route('DELETE', '/items/:id', async ({ uid, params }) => {
     const prev = await db.get('SELECT * FROM items WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
     if (!prev) throw notFound('Tarea no encontrada');
     await db.tx(async (q) => {
       await q.run('DELETE FROM checklist WHERE item_id = ?', [prev.id]);
+      await q.run('DELETE FROM item_files WHERE item_id = ?', [prev.id]);
       await q.run('DELETE FROM items WHERE id = ?', [prev.id]);
     });
     return { ok: true };
@@ -1281,12 +1316,12 @@ async function main() {
      ============================================================ */
   const appUrl = (req) => process.env.APP_URL || (req ? `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}` : '');
 
-  async function readBody(req) {
+  async function readBody(req, max = 1_000_000) {
     const chunks = [];
     let size = 0;
     for await (const c of req) {
       size += c.length;
-      if (size > 1_000_000) throw new HttpError(413, 'Petición demasiado grande');
+      if (size > max) throw new HttpError(413, max > 1_000_000 ? 'El archivo es demasiado grande (máximo 5 MB).' : 'Petición demasiado grande');
       chunks.push(c);
     }
     if (!size) return {};
@@ -1318,14 +1353,14 @@ async function main() {
       await checkSuspendedSession(req);
       throw new HttpError(401, 'Inicia sesión para continuar');
     }
-    const body = req.method === 'GET' ? {} : await readBody(req);
+    const body = req.method === 'GET' ? {} : await readBody(req, r.maxBody);
     const data = await r.handler({ req, res, body, params, uid });
     if (data && data.__binary) {
       res.writeHead(200, {
         'Content-Type': data.type,
         'Cache-Control': data.cache || 'private, max-age=31536000, immutable',
         'X-Content-Type-Options': 'nosniff',
-        ...(data.filename ? { 'Content-Disposition': `${data.inline ? 'inline' : 'attachment'}; filename="${data.filename}"` } : {}),
+        ...(data.filename ? { 'Content-Disposition': `${data.inline ? 'inline' : 'attachment'}; filename="${data.filename.normalize('NFD').replace(/[^\x20-\x7e]/g, '').replace(/"/g, '') || 'archivo'}"; filename*=UTF-8''${encodeURIComponent(data.filename)}` } : {}),
       });
       res.end(data.__binary);
       return;

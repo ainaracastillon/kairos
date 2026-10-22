@@ -81,6 +81,16 @@ CREATE TABLE IF NOT EXISTS items (
   done INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS item_files (
+  id {PK},
+  user_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT 'application/pdf',
+  size INTEGER NOT NULL DEFAULT 0,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS checklist (
   id {PK},
   item_id INTEGER NOT NULL,
@@ -148,6 +158,7 @@ CREATE INDEX IF NOT EXISTS idx_schedule_user ON schedule (user_id);
 CREATE INDEX IF NOT EXISTS idx_items_user ON items (user_id, due_at);
 CREATE INDEX IF NOT EXISTS idx_items_rem ON items (reminder_sent, done);
 CREATE INDEX IF NOT EXISTS idx_checklist_item ON checklist (item_id);
+CREATE INDEX IF NOT EXISTS idx_item_files_item ON item_files (item_id);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events (user_id, start_at);
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
 `;

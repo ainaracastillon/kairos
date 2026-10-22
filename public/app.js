@@ -51,6 +51,7 @@ const ICONS = {
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  pdf: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5"/><path d="M9.5 17v-4h1.2a1.2 1.2 0 0 1 0 2.4H9.5M13.5 17v-4h.9a2 2 0 0 1 0 4ZM17.5 13h-1.6v4M15.9 15h1.3" stroke-width="1.2"/>',
   calAdd: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M12 12.5v5M9.5 15h5"/>',
   refresh: '<path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 5v6.5h-6.5"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
@@ -887,7 +888,7 @@ function dayItemRow(item, withDate = false, checkable = false) {
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
     <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
     ${item.type === 'exam' ? `<button type="button" class="icon-btn row-eye cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}
-    ${item.description.trim() ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción" aria-label="Ver la descripción">${icon('eye')}</button>` : ''}
+    ${item.description.trim() || item.files?.length ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción y los PDF" aria-label="Ver la descripción y los PDF">${icon('eye')}</button>` : ''}
   </div>`;
 }
 
@@ -1526,6 +1527,11 @@ function eventDateLabel(ev) {
   return e && dateKey(e) !== dateKey(s) ? `${fmt(s)} – ${fmt(e)}` : fmt(s);
 }
 
+/* PDF adjuntos (instrucciones de una tarea o examen) */
+const fileUrl = (item, f) => `/api/items/${item.id}/files/${f.id}`;
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const fileChips = (item) => (item.files?.length ? `<div class="file-chips">${item.files.map((f) => `<a class="file-chip" href="${fileUrl(item, f)}" target="_blank" rel="noopener" title="Abrir ${esc(f.name)}">${icon('pdf')}<span>${esc(f.name)}</span></a>`).join('')}</div>` : '');
+
 /* ============================================================
    Añadir exámenes y eventos al calendario del móvil (Apple / Android)
    ============================================================ */
@@ -1605,8 +1611,8 @@ function openItemView(item) {
       ${s ? row('book', esc(subjectLabel(s))) : ''}
       ${item.room ? row('pin', `Aula ${esc(item.room)}`) : ''}
     </div>
-    <h3 class="ev-notes-title">Descripción</h3>
-    <div class="ev-notes">${esc(item.description)}</div>
+    ${item.description.trim() ? `<h3 class="ev-notes-title">Descripción</h3><div class="ev-notes">${esc(item.description)}</div>` : ''}
+    ${item.files?.length ? `<h3 class="ev-notes-title">Instrucciones (PDF)</h3>${fileChips(item)}` : ''}
     <div class="modal-foot">${item.type === 'exam' ? `<button type="button" class="btn" data-cal-item="${item.id}">${icon('calAdd')}Añadir al calendario</button>` : ''}<button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
 }
 
@@ -1792,6 +1798,7 @@ function itemCard(item) {
       </div>
       <h3 data-edit="${item.id}">${esc(item.title)}</h3>
       ${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}
+      ${fileChips(item)}
       ${item.checklist.length ? `
         <ul class="checklist">${item.checklist.map((c) => `<li><label class="${c.done ? 'done' : ''}"><input type="checkbox" data-check="${c.id}" ${c.done ? 'checked' : ''}><span>${esc(c.text)}</span></label></li>`).join('')}</ul>
         <div class="progress" title="${done}/${item.checklist.length}"><div style="width:${Math.round((done / item.checklist.length) * 100)}%"></div></div>` : ''}
@@ -3233,6 +3240,11 @@ function openItemModal(item, defaults = {}) {
         ${state.user.email_notifications || state.pushDevices ? '' : '<small class="hint">No tienes activado ningún aviso. Actívalos en Ajustes, por correo o con notificaciones.</small>'}
       </label>
       <label class="field"><span>Descripción / notas</span><textarea name="description" placeholder="Temas que entran, páginas, materiales…">${esc(data.description)}</textarea></label>
+      <div class="field"><span>Instrucciones en PDF</span>
+        <div class="file-list" id="file-list"></div>
+        <label class="btn btn-sm file-pick">${icon('pdf')}Adjuntar PDF<input type="file" id="file-input" accept="application/pdf,.pdf" multiple hidden></label>
+        <small class="hint">Hasta 5 PDF de 5 MB cada uno: enunciados, rúbricas, instrucciones…</small>
+      </div>
       <div class="field"><span>Checklist</span>
         <div class="cl-editor" id="cl-list"></div>
         <div class="cl-row"><input type="text" id="cl-new" placeholder="Añadir paso y pulsar Enter"><button type="button" class="btn btn-sm" id="cl-add">Añadir</button></div>
@@ -3260,6 +3272,38 @@ function openItemModal(item, defaults = {}) {
 
     setType(data.type);
     $('#type-seg', form).onclick = (e) => { const b = e.target.closest('button'); if (b) setType(b.dataset.type); };
+
+    // PDF adjuntos: se guardan al pulsar Guardar.
+    const files = { keep: [...(item?.files || [])], add: [], remove: [] };
+    const drawFiles = () => {
+      const rows = [
+        ...files.keep.map((f) => `<div class="file-row">${icon('pdf')}<a href="${fileUrl(item, f)}" target="_blank" rel="noopener">${esc(f.name)}</a><small>${fmtSize(f.size)}</small><button type="button" class="icon-btn" data-file-del="${f.id}" aria-label="Quitar ${esc(f.name)}">${icon('x')}</button></div>`),
+        ...files.add.map((f, i) => `<div class="file-row new">${icon('pdf')}<span>${esc(f.name)}</span><small>${fmtSize(f.size)} · se subirá al guardar</small><button type="button" class="icon-btn" data-file-new="${i}" aria-label="Quitar ${esc(f.name)}">${icon('x')}</button></div>`),
+      ];
+      $('#file-list', form).innerHTML = rows.join('');
+    };
+    drawFiles();
+    $('#file-input', form).onchange = async (e) => {
+      const err = $('#form-error', form);
+      err.textContent = '';
+      const picked = [...e.target.files];
+      e.target.value = '';
+      for (const f of picked) {
+        const head = new TextDecoder('latin1').decode(await f.slice(0, 5).arrayBuffer());
+        if (head !== '%PDF-') { err.textContent = `«${f.name}» no es un PDF.`; continue; }
+        if (f.size > 5 * 1024 * 1024) { err.textContent = `«${f.name}» ocupa más de 5 MB.`; continue; }
+        if (files.keep.length + files.add.length >= 5) { err.textContent = 'Como mucho 5 PDF por tarea.'; break; }
+        files.add.push(f);
+      }
+      drawFiles();
+    };
+    $('#file-list', form).onclick = (e) => {
+      const d = e.target.closest('[data-file-del]');
+      if (d) { const id = Number(d.dataset.fileDel); files.keep = files.keep.filter((f) => f.id !== id); files.remove.push(id); drawFiles(); return; }
+      const n = e.target.closest('[data-file-new]');
+      if (n) { files.add.splice(Number(n.dataset.fileNew), 1); drawFiles(); }
+    };
+    const readAsDataUrl = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).replace(/^data:[^;]*;/, 'data:application/pdf;')); r.onerror = () => rej(new Error(`No se ha podido leer «${f.name}».`)); r.readAsDataURL(f); });
 
     const renderChecklist = () => {
       $('#cl-list', form).innerHTML = data.checklist.map((c, i) => `
@@ -3362,7 +3406,17 @@ function openItemModal(item, defaults = {}) {
         checklist: data.checklist.filter((c) => c.text.trim()),
       };
       try {
-        const saved = isNew ? await api('POST', '/items', payload) : await api('PUT', `/items/${item.id}`, payload);
+        let saved = isNew ? await api('POST', '/items', payload) : await api('PUT', `/items/${item.id}`, payload);
+        if (files.remove.length || files.add.length) {
+          const btn = $('.btn-primary', form);
+          if (btn) { btn.disabled = true; btn.textContent = 'Subiendo PDF…'; }
+          const failed = [];
+          for (const id of files.remove) { try { saved = await api('DELETE', `/items/${saved.id}/files/${id}`); } catch { /* ya no estaba */ } }
+          for (const f of files.add) {
+            try { saved = await api('POST', `/items/${saved.id}/files`, { name: f.name, data: await readAsDataUrl(f) }); } catch (ex) { failed.push(`${f.name}: ${ex.message}`); }
+          }
+          if (failed.length) setTimeout(() => toast(`No se pudo adjuntar: ${failed.join(' · ')}`, true), 400);
+        }
         upsertItem(saved);
         closeModal();
         renderView();
@@ -3371,6 +3425,8 @@ function openItemModal(item, defaults = {}) {
         toast(isNew ? (data.type === 'exam' ? 'Examen añadido' : 'Tarea añadida') : 'Cambios guardados');
       } catch (ex) {
         err.textContent = ex.message;
+        const btn = $('.btn-primary', form);
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
       }
     };
   });

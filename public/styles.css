@@ -959,3 +959,18 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .cal-copy .hint { margin: 6px 0 10px; }
 .cal-opt.small { padding: 10px 12px; }
 .cal-opt.small > .i { width: 20px; height: 20px; }
+
+/* ---------- PDF adjuntos ---------- */
+.file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px 4px 7px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 600; text-decoration: none; }
+.file-chip:hover { border-color: var(--accent); }
+.file-chip .i { width: 17px; height: 17px; color: var(--danger); flex: none; }
+.file-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-list { display: grid; gap: 6px; margin-bottom: 6px; }
+.file-list:empty { display: none; }
+.file-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); min-width: 0; }
+.file-row .i { width: 18px; height: 18px; color: var(--danger); flex: none; }
+.file-row a, .file-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 14px; }
+.file-row small { color: var(--muted); flex: none; font-size: 12px; }
+.file-row.new { border-style: dashed; }
+.file-pick { align-self: flex-start; cursor: pointer; }
