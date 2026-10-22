@@ -550,7 +550,6 @@ function renderShell() {
           <button role="menuitem" data-view="events">${icon('event')}Eventos</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
           <button role="menuitem" data-cal-sync>${icon('calendar')}Calendario del móvil</button>
-          ${appInstalled() ? '' : `<button role="menuitem" data-install>${icon('install')}Descargar la app</button>`}
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
           ${state.user.is_guest ? '' : `<hr>
