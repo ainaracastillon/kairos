@@ -974,3 +974,12 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .file-row small { color: var(--muted); flex: none; font-size: 12px; }
 .file-row.new { border-style: dashed; }
 .file-pick { align-self: flex-start; cursor: pointer; }
+
+/* ---------- Visor de PDF en ventana emergente (ordenador) ---------- */
+.modal:has(.pdf-view) { width: min(1100px, 94vw); max-width: none; height: 92vh; max-height: 92vh; display: flex; flex-direction: column; padding-bottom: 12px; }
+.pdf-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pdf-view .modal-head { gap: 12px; }
+.pdf-view .head-text h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.pdf-actions .btn { text-decoration: none; color: var(--text); }
+.pdf-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: #525659; }

@@ -1530,6 +1530,27 @@ function eventDateLabel(ev) {
 /* PDF adjuntos (instrucciones de una tarea o examen) */
 const fileUrl = (item, f) => `/api/items/${item.id}/files/${f.id}`;
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+/** En el ordenador, los PDF se abren en una ventana emergente dentro de Kairos; en el móvil, con el visor del sistema. */
+function openPdfModal(url, name) {
+  openModal(`
+    <div class="pdf-view">
+      <div class="modal-head"><div class="head-text"><h2>${esc(name)}</h2></div>
+        <div class="pdf-actions">
+          <a class="btn btn-sm" href="${url}" target="_blank" rel="noopener">${icon('right')}Abrir en otra pestaña</a>
+          <a class="btn btn-sm" href="${url}" download="${esc(name)}">${icon('download')}Descargar</a>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button>
+        </div>
+      </div>
+      <iframe class="pdf-frame" src="${url}#view=FitH" title="${esc(name)}"></iframe>
+    </div>`);
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a.file-chip, .file-row a');
+  if (!a || isMobile() || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openPdfModal(a.getAttribute('href'), a.textContent.trim() || 'Documento.pdf');
+}, true);
 const fileChips = (item) => (item.files?.length ? `<div class="file-chips">${item.files.map((f) => `<a class="file-chip" href="${fileUrl(item, f)}" target="_blank" rel="noopener" title="Abrir ${esc(f.name)}">${icon('pdf')}<span>${esc(f.name)}</span></a>`).join('')}</div>` : '');
 
 /* ============================================================
