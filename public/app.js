@@ -549,6 +549,7 @@ function renderShell() {
           <button role="menuitem" data-view="subjects">${icon('book')}Asignaturas</button>
           <button role="menuitem" data-view="events">${icon('event')}Eventos</button>
           <button role="menuitem" data-view="settings">${icon('sliders')}Ajustes</button>
+          <button role="menuitem" data-cal-sync>${icon('calendar')}Calendario del móvil</button>
           ${appInstalled() ? '' : `<button role="menuitem" data-install>${icon('install')}Descargar la app</button>`}
           <a role="menuitem" class="um-link" href="/legal.html" target="_blank" rel="noopener">${icon('shield')}Textos legales</a>
           <a role="menuitem" class="um-link" href="/contacto.html" target="_blank" rel="noopener">${icon('mail')}Contacto</a>
@@ -911,7 +912,6 @@ function dayItemRow(item, withDate = false, checkable = false) {
     ${checkable ? `<label class="ev-check" title="Marcar como hecha"><input type="checkbox" data-toggle="${item.id}" aria-label="Marcar como hecha"></label>` : ''}
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
     <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${item.presentation_at ? `<span class="talk-meta">${icon('mic')}Exposición ${esc(new Date(item.presentation_at).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }))} · ${timeOf(new Date(item.presentation_at))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
-    ${item.type === 'exam' ? `<button type="button" class="icon-btn row-eye cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}
     ${item.description.trim() || item.files?.length || item.presentation_at ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver detalles" aria-label="Ver detalles">${icon('eye')}</button>` : ''}
   </div>`;
 }
@@ -946,7 +946,6 @@ function monthEventRow(ev) {
     <label class="ev-check" title="${ev.done ? 'Marcar como pendiente' : 'Marcar como hecho'}"><input type="checkbox" data-ev-done="${ev.id}" ${ev.done ? 'checked' : ''} aria-label="Hecho"></label>
     <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${esc(ev.all_day ? 'Todo el día' : timeOf(d))}</span>
     <div class="grow"><b>${esc(ev.title)}</b><div class="info"><span class="badge event">Evento</span>${ev.location ? `<span>${icon('pin')}${esc(ev.location)}</span>` : ''}</div></div>
-    <button type="button" class="icon-btn row-eye cal-btn" data-cal-event="${ev.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>
     ${ev.description.trim() ? `<button type="button" class="icon-btn row-eye" data-event="${ev.id}" title="Ver las notas" aria-label="Ver las notas">${icon('eye')}</button>` : ''}
   </div>`;
 }
@@ -1539,7 +1538,7 @@ function eventCard(ev, { editable = false, showDate = false } = {}) {
       </div>
       <h3>${esc(ev.title)}</h3>
     </div>
-    <div class="card-actions"><button type="button" class="icon-btn cal-btn" data-cal-event="${ev.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>${editable
+    <div class="card-actions">${editable
       ? `<button class="icon-btn" data-edit-event="${ev.id}" title="Editar" aria-label="Editar evento">${icon('pencil')}</button>`
       : `<button class="icon-btn" data-event="${ev.id}" title="Ver detalles y notas" aria-label="Ver detalles y notas">${icon('eye')}</button>`}</div>
   </article>`;
@@ -1660,7 +1659,7 @@ function openItemView(item) {
     </div>
     ${item.description.trim() ? `<h3 class="ev-notes-title">Descripción</h3><div class="ev-notes">${esc(item.description)}</div>` : ''}
     ${item.files?.length ? `<h3 class="ev-notes-title">Instrucciones (PDF)</h3>${fileChips(item)}` : ''}
-    <div class="modal-foot">${item.type === 'exam' ? `<button type="button" class="btn" data-cal-item="${item.id}">${icon('calAdd')}Añadir al calendario</button>` : ''}<button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
+    <div class="modal-foot"><button type="button" class="btn btn-primary" data-close>Cerrar</button></div>`);
 }
 
 /** Ver un evento (detalles y notas). Para editarlo se usa la sección Eventos del menú. */
@@ -1681,7 +1680,6 @@ function openEventView(ev, { returnTo } = {}) {
     ${ev.description ? `<div class="ev-notes">${esc(ev.description)}</div>` : '<p class="hint">Este evento no tiene notas.</p>'}
     <div class="modal-foot">
       ${returnTo ? `<button type="button" class="btn left" id="ev-back">${icon('left')}Volver al día</button>` : ''}
-      <button type="button" class="btn" data-cal-event="${ev.id}">${icon('calAdd')}Añadir al calendario</button>
       <button type="button" class="btn" id="ev-go-edit">${icon('pencil')}Editar en Eventos</button>
       <button type="button" class="btn btn-primary" data-close>Cerrar</button>
     </div>`, (root) => {
@@ -1851,7 +1849,7 @@ function itemCard(item) {
         <ul class="checklist">${item.checklist.map((c) => `<li><label class="${c.done ? 'done' : ''}"><input type="checkbox" data-check="${c.id}" ${c.done ? 'checked' : ''}><span>${esc(c.text)}</span></label></li>`).join('')}</ul>
         <div class="progress" title="${done}/${item.checklist.length}"><div style="width:${Math.round((done / item.checklist.length) * 100)}%"></div></div>` : ''}
     </div>
-    <div class="card-actions">${item.type === 'exam' ? `<button type="button" class="icon-btn cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}<button class="icon-btn" data-edit="${item.id}" title="Editar" aria-label="Editar">${icon('pencil')}</button></div>
+    <div class="card-actions"><button class="icon-btn" data-edit="${item.id}" title="Editar" aria-label="Editar">${icon('pencil')}</button></div>
   </article>`;
 }
 
@@ -2103,11 +2101,6 @@ function settingsView() {
       <button class="btn" id="add-slot">${icon('plus')}Añadir tramo</button>
     </section>
 
-    <section class="card" id="cal-sub">
-      <h2>Calendario del móvil</h2>
-      <p class="hint">Añade todos tus exámenes y eventos al calendario de tu móvil de una vez. Se actualizan solos cuando los cambias en Kairos (Apple lo revisa cada 15 minutos; Google, varias veces al día).</p>
-      <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
-    </section>
 
     <section class="card">
       <h2>Avisos</h2>
@@ -2137,6 +2130,27 @@ ${state.user.is_guest ? `<div class="status info">${icon('mail')}<span>Los aviso
     <p class="hint settings-foot">Tu nombre, correo, contraseña y datos están en ${'<a href="#account">Mi cuenta</a>'}.</p>
   </div></div>`;
 }
+
+/** Sincronizar con el calendario del móvil: se hace una sola vez para toda la cuenta. */
+const CAL_SYNC_CARD = () => `
+    <section class="card cal-sub-card" id="cal-sub">
+      <h2>${icon('calendar')}Calendario del móvil</h2>
+      <p class="hint">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil: los que ya tienes y los que crees a partir de ahora. Si cambias una fecha, una hora o el aula en Kairos, se cambia solo; lo que borras o marcas como hecho desaparece.</p>
+      <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
+    </section>`;
+function openCalendarSync() {
+  openModal(`
+    <div class="modal-head"><h2>Calendario del móvil</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div>
+    <p class="hint" style="margin-top:0">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil, también los que crees a partir de ahora. Los cambios que hagas en Kairos se actualizan solos.</p>
+    <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>`, (root) => bindCalendarSub(root));
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cal-sync]');
+  if (!b) return;
+  e.preventDefault();
+  $('#user-menu')?.setAttribute('hidden', '');
+  openCalendarSync();
+});
 
 async function bindCalendarSub(root) {
   const box = $('#cal-sub-actions', root);
@@ -2488,6 +2502,7 @@ function guestAccountView() {
       </div>
       <p class="hint" style="margin:10px 0 0">Si inicias sesión con una cuenta que ya tienes, se abrirán los datos de esa cuenta y los de este dispositivo se borrarán.</p>
     </section>
+    ${CAL_SYNC_CARD()}
     ${INSTALL_CARD()}
     ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
@@ -2555,6 +2570,7 @@ function accountView() {
       <button class="btn" id="export-data">${icon('download')}Descargar mis datos</button>
     </section>
 
+    ${CAL_SYNC_CARD()}
     ${INSTALL_CARD()}
     ${APPEARANCE_CARD()}
     ${LEGAL_LIST_CARD()}
@@ -2608,6 +2624,7 @@ async function photoToDataUrl(file) {
 
 function bindAccount(root) {
   bindAppearance(root);
+  bindCalendarSub(root);
   root.addEventListener('click', (e) => { const l = e.target.closest('[data-auth-link]'); if (l) { e.preventDefault(); renderAuth(l.dataset.authLink); } });
   const delBtn = $('#delete-account', root);
   if (delBtn) delBtn.onclick = () => openDeleteAccountModal();
