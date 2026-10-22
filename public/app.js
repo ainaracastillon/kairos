@@ -777,7 +777,7 @@ function talkRow(item) {
   return `<div class="day-class day-item talk" style="--c:${s ? s.color : 'var(--muted)'}">
     <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${timeOf(d)}</span>
     <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge talk">${icon('mic')}Exposición</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}</div></div>
-    ${item.description.trim() || item.files?.length ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción y los PDF" aria-label="Ver la descripción y los PDF">${icon('eye')}</button>` : ''}
+    <button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver detalles" aria-label="Ver detalles">${icon('eye')}</button>
   </div>`;
 }
 
@@ -910,9 +910,9 @@ function dayItemRow(item, withDate = false, checkable = false) {
   return `<div class="day-class day-item ${item.type}" style="--c:${s ? s.color : 'var(--muted)'}">
     ${checkable ? `<label class="ev-check" title="Marcar como hecha"><input type="checkbox" data-toggle="${item.id}" aria-label="Marcar como hecha"></label>` : ''}
     <span class="time">${withDate ? `${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>` : ''}${timeOf(d)}</span>
-    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
+    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}${item.presentation_at ? `<span class="talk-meta">${icon('mic')}Exposición ${esc(new Date(item.presentation_at).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }))} · ${timeOf(new Date(item.presentation_at))}</span>` : ''}${overdue ? '<span class="overdue">Vencida</span>' : ''}</div></div>
     ${item.type === 'exam' ? `<button type="button" class="icon-btn row-eye cal-btn" data-cal-item="${item.id}" title="Añadir al calendario del móvil" aria-label="Añadir al calendario del móvil">${icon('calAdd')}</button>` : ''}
-    ${item.description.trim() || item.files?.length ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción y los PDF" aria-label="Ver la descripción y los PDF">${icon('eye')}</button>` : ''}
+    ${item.description.trim() || item.files?.length || item.presentation_at ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver detalles" aria-label="Ver detalles">${icon('eye')}</button>` : ''}
   </div>`;
 }
 
@@ -1656,6 +1656,7 @@ function openItemView(item) {
       ${row('clock', esc(timeOf(d)))}
       ${s ? row('book', esc(subjectLabel(s))) : ''}
       ${item.room ? row('pin', `Aula ${esc(item.room)}`) : ''}
+      ${item.presentation_at ? row('mic', `<b>Exposición:</b> ${esc(cap(new Date(item.presentation_at).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })))} · ${timeOf(new Date(item.presentation_at))}`) : ''}
     </div>
     ${item.description.trim() ? `<h3 class="ev-notes-title">Descripción</h3><div class="ev-notes">${esc(item.description)}</div>` : ''}
     ${item.files?.length ? `<h3 class="ev-notes-title">Instrucciones (PDF)</h3>${fileChips(item)}` : ''}
