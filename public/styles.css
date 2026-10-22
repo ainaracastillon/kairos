@@ -983,3 +983,15 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .pdf-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .pdf-actions .btn { text-decoration: none; color: var(--text); }
 .pdf-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: #525659; }
+
+/* ---------- Exposiciones de tareas ---------- */
+.talk-box { margin: -2px 0 12px; }
+.talk-box .check-line .i { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; color: var(--accent); }
+#talk-fields { margin-top: 10px; }
+.talk-meta { color: var(--accent); font-weight: 600; }
+.badge.talk { display: inline-flex; align-items: center; gap: 3px; background: color-mix(in srgb, #7461a6 14%, transparent); color: #6a56a0; }
+.badge.talk .i { width: 12px; height: 12px; }
+.chip-item.talk .t .i { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
+.dots i.talk { border-radius: 2px; transform: rotate(45deg) scale(.8); background: var(--c); }
+@media (prefers-color-scheme: dark) { :root:not([data-mode="light"]) .badge.talk { color: #b5a6e6; } }
+:root[data-mode="dark"] .badge.talk { color: #b5a6e6; }

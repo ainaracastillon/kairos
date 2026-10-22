@@ -125,7 +125,7 @@ const fmtEvent = (e) => ({
   reminder_minutes: e.reminder_minutes ?? null, reminder_sent: Boolean(e.reminder_sent), done: Boolean(e.done),
 });
 const fmtItem = (i, checklist, files = []) => ({
-  id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description, room: i.room || '',
+  id: i.id, timetable_id: i.timetable_id, subject_id: i.subject_id ?? null, type: i.type, title: i.title, description: i.description, room: i.room || '', presentation_at: i.presentation_at || null,
   due_at: i.due_at, reminder_minutes: i.reminder_minutes ?? null, reminder_sent: Boolean(i.reminder_sent), done: Boolean(i.done),
   checklist: checklist.map((c) => ({ id: c.id, text: c.text, done: Boolean(c.done) })),
   files: files.map((f) => ({ id: f.id, name: f.name, size: Number(f.size) })),
@@ -152,6 +152,7 @@ async function main() {
   for (const col of ['start_date TEXT', 'end_date TEXT', "teacher_email TEXT NOT NULL DEFAULT ''", "skip_dates TEXT NOT NULL DEFAULT '[]'"]) await db.run(`ALTER TABLE subjects ADD COLUMN ${col}`).catch(() => {});
   await db.run('ALTER TABLE events ADD COLUMN done INTEGER NOT NULL DEFAULT 0').catch(() => {});
   await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
+  await db.run('ALTER TABLE items ADD COLUMN presentation_at TEXT').catch(() => {});
   await db.run("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'auto'").catch(() => {});
   await db.run('ALTER TABLE users ADD COLUMN calendar_token TEXT').catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
@@ -1090,6 +1091,7 @@ async function main() {
       title: has('title') ? str(body.title, 300) : prev?.title,
       description: has('description') ? String(body.description ?? '').slice(0, 20000) : prev?.description ?? '',
       room: has('room') ? str(body.room, 60) : prev?.room ?? '',
+      presentation_at: has('presentation_at') ? (body.presentation_at ? isoDate(body.presentation_at, 'La fecha de la exposición') : null) : prev?.presentation_at ?? null,
       subject_id: has('subject_id') ? (body.subject_id ? Number(body.subject_id) : null) : prev?.subject_id ?? null,
       timetable_id: has('timetable_id') ? Number(body.timetable_id) : prev?.timetable_id,
       due_at: has('due_at') ? isoDate(body.due_at, 'La fecha') : prev?.due_at,
@@ -1147,17 +1149,18 @@ async function main() {
     const since = new Date(Date.now() - 60 * 86400000).toISOString();
     const items = await db.all("SELECT * FROM items WHERE user_id = ? AND type = 'exam' AND done = 0 AND due_at >= ? ORDER BY due_at", [u.id, since]);
     const events = await db.all('SELECT * FROM events WHERE user_id = ? AND done = 0 AND COALESCE(end_at, start_at) >= ? ORDER BY start_at', [u.id, since]);
+    const talks = await db.all('SELECT * FROM items WHERE user_id = ? AND done = 0 AND presentation_at IS NOT NULL AND presentation_at >= ? ORDER BY presentation_at', [u.id, since]);
     const subjects = new Map((await db.all('SELECT * FROM subjects WHERE user_id = ?', [u.id])).map((s) => [s.id, s]));
     const tz = userTz(u);
     const host = calHost(req);
-    return icsFile(ics.calendar([...items.map((i) => ics.itemEvent(i, subjects.get(i.subject_id), tz, host)), ...events.map((e) => ics.eventEvent(e, tz, host))], 'Kairos'), 'kairos.ics', true);
+    return icsFile(ics.calendar([...items.map((i) => ics.itemEvent(i, subjects.get(i.subject_id), tz, host)), ...events.map((e) => ics.eventEvent(e, tz, host)), ...talks.map((t) => ics.talkEvent(t, subjects.get(t.subject_id), tz, host))], 'Kairos'), 'kairos.ics', true);
   }, { auth: false });
   route('POST', '/items', async ({ uid, body }) => {
     const d = await itemData(uid, body);
     const id = await db.tx(async (q) => {
-      const r = await q.run(`INSERT INTO items (user_id, timetable_id, subject_id, type, title, description, room, due_at, reminder_minutes, reminder_sent, done, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id`,
-      [uid, d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.due_at, d.reminder_minutes, d.done, nowIso()]);
+      const r = await q.run(`INSERT INTO items (user_id, timetable_id, subject_id, type, title, description, room, presentation_at, due_at, reminder_minutes, reminder_sent, done, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id`,
+      [uid, d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.presentation_at, d.due_at, d.reminder_minutes, d.done, nowIso()]);
       if (Array.isArray(body.checklist)) await saveChecklist(q, r.id, body.checklist);
       return r.id;
     });
@@ -1170,8 +1173,8 @@ async function main() {
     // Si cambia la fecha o el aviso, se vuelve a avisar.
     const resend = d.due_at !== prev.due_at || d.reminder_minutes !== (prev.reminder_minutes ?? null);
     await db.tx(async (q) => {
-      await q.run('UPDATE items SET timetable_id = ?, subject_id = ?, type = ?, title = ?, description = ?, room = ?, due_at = ?, reminder_minutes = ?, reminder_sent = ?, done = ? WHERE id = ?',
-        [d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.due_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, d.done, prev.id]);
+      await q.run('UPDATE items SET timetable_id = ?, subject_id = ?, type = ?, title = ?, description = ?, room = ?, presentation_at = ?, due_at = ?, reminder_minutes = ?, reminder_sent = ?, done = ? WHERE id = ?',
+        [d.timetable_id, d.subject_id, d.type, d.title, d.description, d.room, d.presentation_at, d.due_at, d.reminder_minutes, resend ? 0 : prev.reminder_sent, d.done, prev.id]);
       if (Array.isArray(body.checklist)) await saveChecklist(q, prev.id, body.checklist);
     });
     return itemOut(prev.id);

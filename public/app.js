@@ -51,6 +51,7 @@ const ICONS = {
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   select: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="m13.5 17 2.3 2.3 4.2-4.6"/>',
   shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 8 7 9 4.1-1 7-4.7 7-9V6.2Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
   pdf: '<path d="M7 3h7.5L19 7.5V21H7Z"/><path d="M14 3v5h5"/><path d="M9.5 17v-4h1.2a1.2 1.2 0 0 1 0 2.4H9.5M13.5 17v-4h.9a2 2 0 0 1 0 4ZM17.5 13h-1.6v4M15.9 15h1.3" stroke-width="1.2"/>',
   calAdd: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M12 12.5v5M9.5 15h5"/>',
   refresh: '<path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 5v6.5h-6.5"/>',
@@ -762,6 +763,24 @@ function eventChip(ev, key) {
     <span class="t">${time}${esc(ev.title)}</span></div>`;
 }
 
+/** Exposición de una tarea: en el mes aparece en su propia fecha. */
+function talkChip(item) {
+  const d = new Date(item.presentation_at);
+  const s = subjectById(item.subject_id);
+  return `<div class="chip-item talk" style="--c:${s ? s.color : 'var(--muted)'}" title="${esc(`Exposición: ${item.title}${s ? ` (${s.name})` : ''} · ${timeOf(d)}`)}">
+    <span class="t"><time>${timeOf(d)}</time>${icon('mic')}${esc(item.title)}</span>
+  </div>`;
+}
+function talkRow(item) {
+  const d = new Date(item.presentation_at);
+  const s = subjectById(item.subject_id);
+  return `<div class="day-class day-item talk" style="--c:${s ? s.color : 'var(--muted)'}">
+    <span class="time">${esc(cap(d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}<br>${timeOf(d)}</span>
+    <div class="grow"><b>${esc(item.title)}</b><div class="info"><span class="badge talk">${icon('mic')}Exposición</span>${s ? `<span>${esc(subjectLabel(s))}</span>` : ''}</div></div>
+    ${item.description.trim() || item.files?.length ? `<button type="button" class="icon-btn row-eye" data-view-item="${item.id}" title="Ver la descripción y los PDF" aria-label="Ver la descripción y los PDF">${icon('eye')}</button>` : ''}
+  </div>`;
+}
+
 function itemChip(item) {
   const d = new Date(item.due_at);
   const s = subjectById(item.subject_id);
@@ -825,6 +844,11 @@ function monthView() {
   const title = cap(state.cursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }));
   const monthPrefix = `${y}-${pad(m + 1)}`;
   const monthItems = items.filter((i) => dateKey(new Date(i.due_at)).startsWith(monthPrefix));
+  // Exposiciones de las tareas (fecha propia, distinta de la entrega).
+  const talks = items.filter((i) => i.presentation_at);
+  const talksByDay = new Map();
+  for (const it of talks) { const k = dateKey(new Date(it.presentation_at)); if (!talksByDay.has(k)) talksByDay.set(k, []); talksByDay.get(k).push(it); }
+  const monthTalks = talks.filter((i) => dateKey(new Date(i.presentation_at)).startsWith(monthPrefix));
   const monthEvents = ttEvents(tt.id).filter((ev) => !ev.done && eventDayKeys(ev).some((k) => k.startsWith(monthPrefix)));
   const pendingExams = monthItems.filter((i) => i.type === 'exam' && !i.done).length;
   const pendingTasks = monthItems.filter((i) => i.type === 'task' && !i.done).length;
@@ -837,7 +861,7 @@ function monthView() {
   const cells = weeks.flat().map((d) => {
     const k = dateKey(d);
     if (mobile) {
-      const dayItems = byDay.get(k) || [];
+      const dayItems = [...(byDay.get(k) || []), ...(talksByDay.get(k) || []).map((i) => ({ ...i, type: 'talk' }))];
       const dayEvents = eventsByDay.get(k) || [];
       const groups = state.showClasses ? groupClasses(classesFor(d)) : [];
       return `<div class="day-cell ${d.getMonth() !== m ? 'other' : ''} ${k === todayKey ? 'today' : ''} ${k === state.selectedDay ? 'selected' : ''}" data-date="${k}">
@@ -850,7 +874,7 @@ function monthView() {
     return `<div class="day-cell ${d.getMonth() !== m ? 'other' : ''} ${k === todayKey ? 'today' : ''}" data-date="${k}">
       <div class="day-head"><span class="day-num">${d.getDate()}</span><button class="icon-btn add" data-action="newItem" data-type="task" data-date="${k}" title="Añadir tarea" aria-label="Añadir tarea">${icon('plus')}</button></div>
       ${classes.length ? `<div class="classes">${groupClasses(classes).map((g) => `<span class="cls" style="--c:${g.subject.color}" title="${esc(`${g.start}–${g.end} ${subjectLabel(g.subject)}`)}">${esc(shortName(g.subject))}${g.count > 1 ? `×${g.count}` : ''}</span>`).join('')}</div>` : ''}
-      <div class="cell-items">${(eventsByDay.get(k) || []).map((ev) => eventChip(ev, k)).join('')}${(byDay.get(k) || []).map(itemChip).join('')}</div>
+      <div class="cell-items">${(eventsByDay.get(k) || []).map((ev) => eventChip(ev, k)).join('')}${(byDay.get(k) || []).map(itemChip).join('')}${(talksByDay.get(k) || []).map(talkChip).join('')}</div>
     </div>`;
   });
 
@@ -874,8 +898,8 @@ function monthView() {
       ${cells.join('')}
     </div>
     ${mobile
-      ? `<section class="agenda">${dayDetail(state.selectedDay, false, monthLists(monthItems, monthEvents, title))}</section></div>`
-      : `<section class="month-lists">${monthLists(monthItems, monthEvents, title)}</section>`}`;
+      ? `<section class="agenda">${dayDetail(state.selectedDay, false, monthLists(monthItems, monthEvents, title, monthTalks))}</section></div>`
+      : `<section class="month-lists">${monthLists(monthItems, monthEvents, title, monthTalks)}</section>`}`;
 }
 
 /** Tarea o examen solo para informar (sin casilla ni lista de pasos), con el aspecto de las clases. */
@@ -896,7 +920,7 @@ function dayItemRow(item, withDate = false, checkable = false) {
  * Listas del mes, siempre visibles en Mes: tareas y exámenes pendientes (solo informativos)
  * y eventos, que sí se pueden marcar como hechos desde aquí.
  */
-function monthLists(items, events, monthTitle) {
+function monthLists(items, events, monthTitle, talks = []) {
   const month = monthTitle.replace(/ de \d{4}$/, '').toLowerCase();
   const pending = [...items].filter((i) => !i.done).sort((a, b) => a.due_at.localeCompare(b.due_at));
   const tasks = pending.filter((i) => i.type === 'task');
@@ -910,6 +934,7 @@ function monthLists(items, events, monthTitle) {
   return `<div class="month-lists-inner">
     ${block(`Tareas de ${esc(month)}`, 'tasks', tasks, (i) => dayItemRow(i, true, true), 'No hay tareas pendientes este mes.')}
     ${block(`Exámenes de ${esc(month)}`, 'exams', exams, (i) => dayItemRow(i, true), 'No hay exámenes este mes.')}
+    ${block(`Exposiciones de ${esc(month)}`, 'talks', [...talks].sort((a, b) => a.presentation_at.localeCompare(b.presentation_at)), talkRow)}
     ${block(`Eventos de ${esc(month)}`, 'events', evs, monthEventRow, 'No hay eventos este mes.')}
   </div>`;
 }
@@ -1813,6 +1838,7 @@ function itemCard(item) {
         <span class="badge ${item.type}">${item.type === 'exam' ? 'Examen' : 'Tarea'}</span>
         ${s ? `<span><span class="dot" style="--c:${s.color}"></span> ${esc(subjectLabel(s))}</span>` : ''}
         <span>${icon('clock')}${esc(fmtDateTime(d))}</span>
+        ${item.presentation_at ? `<span class="talk-meta">${icon('mic')}Exposición: ${esc(fmtDateTime(new Date(item.presentation_at)))}</span>` : ''}
         ${item.room ? `<span>${icon('pin')}${esc(item.room)}</span>` : ''}
         <span class="${overdue ? 'overdue' : ''}">${overdue ? 'Vencida ' : ''}${esc(relative(d))}</span>
         ${item.reminder_minutes !== null ? `<span title="Aviso: ${esc(rem ? rem[1] : `${item.reminder_minutes} min antes`)}">${item.reminder_sent ? icon('sent') : icon('bell')}</span>` : ''}
@@ -3225,6 +3251,9 @@ function openItemModal(item, defaults = {}) {
     title: item?.title || '',
     description: item?.description || '',
     room: item?.room || '',
+    talk: Boolean(item?.presentation_at),
+    talkDate: item?.presentation_at ? dateKey(new Date(item.presentation_at)) : '',
+    talkTime: item?.presentation_at ? timeOf(new Date(item.presentation_at)) : '10:00',
     subject_id: item?.subject_id ?? null,
     date: due ? dateKey(due) : defaults.date || dateKey(new Date()),
     time: due ? timeOf(due) : '09:00',
@@ -3255,6 +3284,13 @@ function openItemModal(item, defaults = {}) {
         <label class="field"><span>Fecha</span><input type="date" name="date" value="${data.date}" required></label>
         <label class="field"><span>Hora</span><input type="time" name="time" value="${data.time}" required></label>
       </div>
+      <div class="talk-box" id="talk-box">
+        <label class="check-line"><input type="checkbox" name="talk" ${data.talk ? 'checked' : ''}><span>${icon('mic')}Tiene exposición</span></label>
+        <div class="row" id="talk-fields">
+          <label class="field"><span>Fecha de la exposición</span><input type="date" name="talk_date" value="${data.talkDate}"></label>
+          <label class="field"><span>Hora</span><input type="time" name="talk_time" value="${data.talkTime}"></label>
+        </div>
+      </div>
       <label class="field" id="room-field"><span>Aula</span><input type="text" name="room" value="${esc(data.room)}" maxlength="60" placeholder="Ej.: B-12"></label>
       <label class="field"><span>Aviso</span>
         <select name="reminder">${REMINDERS.map(([v, l]) => `<option value="${v ?? ''}" ${v === data.reminder_minutes ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -3284,6 +3320,7 @@ function openItemModal(item, defaults = {}) {
       $$('#type-seg button', form).forEach((b) => b.classList.toggle('active', b.dataset.type === t));
       $('#item-heading', form).textContent = isNew ? (t === 'exam' ? 'Nuevo examen' : 'Nueva tarea') : t === 'exam' ? 'Editar examen' : 'Editar tarea';
       $('#room-field', form).style.display = t === 'exam' ? '' : 'none';
+      $('#talk-box', form).style.display = t === 'task' ? '' : 'none';
     };
     // El aula propone la de la asignatura elegida.
     const syncRoomHint = () => {
@@ -3291,6 +3328,12 @@ function openItemModal(item, defaults = {}) {
       form.room.placeholder = subj && effRoom(subj) ? `Ej.: ${effRoom(subj)} (aula de ${subj.name})` : 'Ej.: B-12';
     };
 
+    const syncTalk = () => {
+      $('#talk-fields', form).style.display = form.talk.checked ? '' : 'none';
+      if (form.talk.checked && !form.talk_date.value) form.talk_date.value = form.date.value;
+    };
+    syncTalk();
+    form.talk.onchange = syncTalk;
     setType(data.type);
     $('#type-seg', form).onclick = (e) => { const b = e.target.closest('button'); if (b) setType(b.dataset.type); };
 
@@ -3422,6 +3465,7 @@ function openItemModal(item, defaults = {}) {
         room: data.type === 'exam' ? form.room.value.trim() : '',
         timetable_id: tt.id,
         due_at: new Date(`${form.date.value}T${form.time.value}`).toISOString(),
+        presentation_at: data.type === 'task' && form.talk.checked ? new Date(`${form.talk_date.value || form.date.value}T${form.talk_time.value || '10:00'}`).toISOString() : null,
         reminder_minutes: form.reminder.value === '' ? null : Number(form.reminder.value),
         done: form.done.checked,
         checklist: data.checklist.filter((c) => c.text.trim()),

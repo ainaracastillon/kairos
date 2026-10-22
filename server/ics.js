@@ -56,6 +56,13 @@ function itemEvent(item, subject, tz, host) {
     location: item.room || '', description: item.description || '', reminder: item.reminder_minutes,
   });
 }
+/** Exposición de una tarea, con su propia fecha y hora (1 hora). */
+function talkEvent(item, subject, tz, host) {
+  return vevent({
+    uid: `talk-${item.id}@${host}`, title: `Exposición: ${item.title}${subject && !item.title.toLowerCase().includes(subject.name.toLowerCase()) ? ` (${subject.name})` : ''}`,
+    start: item.presentation_at, tz, location: item.room || '', description: item.description || '', reminder: item.reminder_minutes,
+  });
+}
 function eventEvent(ev, tz, host) {
   return vevent({
     uid: `event-${ev.id}@${host}`, title: ev.title, start: ev.start_at, end: ev.end_at, allDay: Boolean(ev.all_day), tz,
@@ -72,4 +79,4 @@ function calendar(vevents, name = 'Kairos') {
   return `${lines.map(fold).join('\r\n')}\r\n`;
 }
 
-module.exports = { calendar, itemEvent, eventEvent };
+module.exports = { calendar, itemEvent, eventEvent, talkEvent };
