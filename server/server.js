@@ -154,6 +154,7 @@ async function main() {
   await db.run("ALTER TABLE items ADD COLUMN room TEXT NOT NULL DEFAULT ''").catch(() => {});
   await db.run('ALTER TABLE items ADD COLUMN presentation_at TEXT').catch(() => {});
   await db.run("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'auto'").catch(() => {});
+  await db.run('DELETE FROM cal_archive').catch(() => {}); // ya no se guardan copias de lo borrado
   await db.run('ALTER TABLE users ADD COLUMN calendar_token TEXT').catch(() => {});
   // Solo hay una superadministradora: la del correo configurado.
   await db.run("UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND email <> ?", [SUPERADMIN_EMAIL]);
@@ -939,10 +940,6 @@ async function main() {
     const tt = await ownTimetable(uid, params.id);
     const all = await listTimetables(uid);
     if (all.length < 2) throw bad('No puedes eliminar tu único horario');
-    await archiveForCalendar(uid, req, {
-      items: await db.all('SELECT * FROM items WHERE timetable_id = ? AND user_id = ?', [tt.id, uid]),
-      events: await db.all('SELECT * FROM events WHERE timetable_id = ? AND user_id = ?', [tt.id, uid]),
-    });
     await db.tx(async (q) => {
       await q.run('DELETE FROM schedule WHERE slot_id IN (SELECT id FROM slots WHERE timetable_id = ?)', [tt.id]);
       await q.run('DELETE FROM slots WHERE timetable_id = ?', [tt.id]);
@@ -1146,41 +1143,18 @@ async function main() {
   }
   route('GET', '/me/calendar', async ({ uid }) => ({ token: await calendarToken(uid) }));
   route('POST', '/me/calendar/reset', async ({ uid }) => ({ token: await calendarToken(uid, true) }));
-  /*
-   * En el calendario del móvil no desaparece nada: lo que se borra en Kairos se guarda aquí
-   * tal y como estaba, para seguir mostrándolo en la suscripción.
-   */
-  async function archiveForCalendar(userId, req, { items = [], events = [] }) {
-    if (!items.length && !events.length) return;
-    const u = await getUser(userId);
-    const tz = userTz(u);
-    const host = calHost(req);
-    const subjects = new Map((await db.all('SELECT * FROM subjects WHERE user_id = ?', [userId])).map((s) => [s.id, s]));
-    const blocks = [];
-    for (const i of items) {
-      if (i.type === 'exam') blocks.push(ics.itemEvent(i, subjects.get(i.subject_id), tz, host));
-      if (i.presentation_at) blocks.push(ics.talkEvent(i, subjects.get(i.subject_id), tz, host));
-    }
-    for (const e of events) blocks.push(ics.eventEvent(e, tz, host));
-    for (const lines of blocks) {
-      const uidLine = lines.find((l) => l.startsWith('UID:')) || '';
-      await db.run('INSERT INTO cal_archive (user_id, uid, data, created_at) VALUES (?, ?, ?, ?)', [userId, uidLine.slice(4), lines.join('\n'), nowIso()]);
-    }
-  }
-
   route('GET', '/cal/:token', async ({ params, req }) => {
     const token = String(params.token).replace(/\.ics$/i, '');
     const u = token.length >= 20 ? await db.get('SELECT * FROM users WHERE calendar_token = ?', [token]) : null;
     if (!u || u.suspended_at) throw notFound('Calendario no encontrado');
-    // Todo se mantiene en el calendario del móvil: también lo hecho, lo pasado y lo borrado.
+    // En el calendario del móvil se mantiene lo hecho y lo pasado; lo borrado en Kairos desaparece (ya no va a suceder).
     const items = await db.all("SELECT * FROM items WHERE user_id = ? AND type = 'exam' ORDER BY due_at", [u.id]);
     const events = await db.all('SELECT * FROM events WHERE user_id = ? ORDER BY start_at', [u.id]);
     const talks = await db.all('SELECT * FROM items WHERE user_id = ? AND presentation_at IS NOT NULL ORDER BY presentation_at', [u.id]);
-    const archived = await db.all('SELECT data FROM cal_archive WHERE user_id = ? ORDER BY id', [u.id]);
     const subjects = new Map((await db.all('SELECT * FROM subjects WHERE user_id = ?', [u.id])).map((s) => [s.id, s]));
     const tz = userTz(u);
     const host = calHost(req);
-    return icsFile(ics.calendar([...items.map((i) => ics.itemEvent(i, subjects.get(i.subject_id), tz, host)), ...events.map((e) => ics.eventEvent(e, tz, host)), ...talks.map((t) => ics.talkEvent(t, subjects.get(t.subject_id), tz, host)), ...archived.map((a) => a.data.split('\n'))], 'Kairos'), 'kairos.ics', true);
+    return icsFile(ics.calendar([...items.map((i) => ics.itemEvent(i, subjects.get(i.subject_id), tz, host)), ...events.map((e) => ics.eventEvent(e, tz, host)), ...talks.map((t) => ics.talkEvent(t, subjects.get(t.subject_id), tz, host))], 'Kairos'), 'kairos.ics', true);
   }, { auth: false });
   route('POST', '/items', async ({ uid, body }) => {
     const d = await itemData(uid, body);
@@ -1237,7 +1211,6 @@ async function main() {
   route('DELETE', '/items/:id', async ({ uid, params, req }) => {
     const prev = await db.get('SELECT * FROM items WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
     if (!prev) throw notFound('Tarea no encontrada');
-    await archiveForCalendar(uid, req, { items: [prev] });
     await db.tx(async (q) => {
       await q.run('DELETE FROM checklist WHERE item_id = ?', [prev.id]);
       await q.run('DELETE FROM item_files WHERE item_id = ?', [prev.id]);
@@ -1314,8 +1287,6 @@ async function main() {
     return fmtEvent(await db.get('SELECT * FROM events WHERE id = ?', [Number(params.id)]));
   });
   route('DELETE', '/events/:id', async ({ uid, params, req }) => {
-    const ev = await db.get('SELECT * FROM events WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
-    if (ev) await archiveForCalendar(uid, req, { events: [ev] });
     const r = await db.run('DELETE FROM events WHERE id = ? AND user_id = ?', [Number(params.id), uid]);
     if (!r.changes) throw notFound('Evento no encontrado');
     return { ok: true };

@@ -2134,7 +2134,7 @@ ${state.user.is_guest ? `<div class="status info">${icon('mail')}<span>Los aviso
 const CAL_SYNC_CARD = () => `
     <section class="card cal-sub-card" id="cal-sub">
       <h2>${icon('calendar')}Calendario del móvil</h2>
-      <p class="hint">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil: los que ya tienes y los que crees a partir de ahora. Si cambias una fecha, una hora o el aula en Kairos, se cambia solo. Lo que marques como hecho o borres en Kairos se queda en el calendario del móvil.</p>
+      <p class="hint">Pulsa una sola vez y todos tus exámenes, eventos y exposiciones aparecerán en el calendario de tu móvil: los que ya tienes y los que crees a partir de ahora. Si cambias una fecha, una hora o el aula en Kairos, se cambia solo. Lo que marques como hecho se queda en el calendario del móvil; lo que borres en Kairos desaparece, porque ya no va a suceder.</p>
       <div class="cal-sub-actions" id="cal-sub-actions"><span class="hint">Preparando tu enlace…</span></div>
     </section>`;
 function openCalendarSync() {
