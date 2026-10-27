@@ -80,6 +80,8 @@ async function sendMail({ to, subject, text, html, replyTo }) {
       body: JSON.stringify({ sender: parseFrom(MAIL_FROM), to: [{ email: to }], subject, textContent: text, htmlContent: html, ...(replyTo ? { replyTo: { email: replyTo } } : {}) }),
     });
     if (!res.ok) throw new Error(`No se pudo enviar el correo (${res.status}): ${await res.text().catch(() => '')}`);
+    const j = await res.json().catch(() => ({}));
+    console.log('[correo] Brevo aceptó el envío', j.messageId || '');
     return;
   }
   if (process.env.RESEND_API_KEY) {

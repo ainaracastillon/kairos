@@ -161,6 +161,7 @@ async function main() {
   await db.run("UPDATE users SET role = 'superadmin', suspended_at = NULL, suspend_reason = NULL, delete_suggested_at = NULL WHERE email = ?", [SUPERADMIN_EMAIL]);
   await notify.initPush(db).catch((e) => console.error('[push] no disponible:', e.message));
   notify.checkSender();
+  setTimeout(() => notify.logMailEvents(), 5000);
 
   /* ---------- consultas de apoyo ---------- */
   const getUser = (id) => db.get('SELECT * FROM users WHERE id = ?', [id]);
@@ -899,6 +900,8 @@ async function main() {
       text: `Hola, ${u.name}. Si lees esto, los avisos por correo de Kairos funcionan.`,
       html: notify.mailHtml('Todo listo', `<p>Hola, ${notify.escHtml(u.name)}. Si lees esto, los avisos por correo de Kairos funcionan.</p>`, appUrl(req)),
     });
+    console.log('[correo] prueba enviada a', u.email.replace(/^(.{3}).*@/, '$1…@'));
+    setTimeout(() => notify.logMailEvents(), 30000);
     return { mail_configured: notify.mailConfigured() };
   });
 
