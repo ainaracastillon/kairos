@@ -118,6 +118,11 @@ h1, h2 { font-family: var(--font-display); letter-spacing: -0.01em; }
 input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], select, textarea {
   width: 100%; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); transition: border-color .15s, box-shadow .15s;
 }
+/* iPhone: los campos de fecha y hora tienen un ancho mínimo propio y se salían de su columna. */
+input[type=date], input[type=time] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; box-sizing: border-box; min-height: 40px; line-height: 1.3; color: inherit; font: inherit; }
+input[type=date]::-webkit-date-and-time-value, input[type=time]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 1.3em; }
+input[type=date]::-webkit-calendar-picker-indicator, input[type=time]::-webkit-calendar-picker-indicator { margin: 0; }
+.field { min-width: 0; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 textarea { resize: vertical; min-height: 72px; }
