@@ -25,6 +25,7 @@ const PALETTE = ['#c8553d', '#e07b3c', '#e0a43a', '#b5a032', '#6f9a48', '#3f8c66
 /* Iconos de línea (24×24) */
 const ICONS = {
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  weeks: '<rect x="3.5" y="4" width="17" height="16.5" rx="2.5"/><path d="M3.5 9.5h17M3.5 15h17M8.5 9.5v11"/>',
   grid: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.5h17M3.5 15h17M9.5 3.5v17"/>',
   check: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12.4 2.8 2.8L16.3 9.5"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5v-15Z"/><path d="M5 20.5A2.5 2.5 0 0 0 7.5 23H19v-5"/><path d="M9 7.5h6"/>',
@@ -519,9 +520,10 @@ function renderSuspended(info) {
    Estructura principal
    ============================================================ */
 /* Pestañas visibles; Asignaturas y Ajustes están en el menú de la cuenta (arriba a la derecha). */
-const TAB_VIEWS = ['month', 'week', 'items'];
+const TAB_VIEWS = ['month', 'plan', 'week', 'items'];
 const VIEWS = [
   ['month', 'calendar', 'Mes', 'Mes'],
+  ['plan', 'weeks', 'Semanas', 'Semanas'],
   ['week', 'grid', 'Horario', 'Horario'],
   ['items', 'check', 'Tareas y exámenes', 'Tareas'],
   ['subjects', 'book', 'Asignaturas', 'Materias'],
@@ -604,7 +606,7 @@ function renderView() {
   const el = $('#view');
   const scrollEl = $('.scroll', el);
   const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
-  el.innerHTML = { month: monthView, week: weekView, items: itemsView, subjects: subjectsView, events: eventsView, settings: settingsView, account: accountView, admin: adminView }[view]();
+  el.innerHTML = { month: monthView, plan: planView, week: weekView, items: itemsView, subjects: subjectsView, events: eventsView, settings: settingsView, account: accountView, admin: adminView }[view]();
   if (view === 'settings') bindSettings(el);
   if (view === 'account') bindAccount(el);
   if (view === 'admin') bindAdmin(el);
@@ -730,6 +732,7 @@ function goMonth(delta) {
 }
 
 const ACTIONS = {
+  planPast: () => { state.planPast = !state.planPast; renderView(); },
   prev: () => goMonth(-1),
   next: () => goMonth(1),
   today: () => { state.cursor = startOfMonth(new Date()); state.selectedDay = dateKey(new Date()); renderView(); },
@@ -900,6 +903,75 @@ function monthView() {
     ${mobile
       ? `<section class="agenda">${dayDetail(state.selectedDay, false, monthLists(monthItems, monthEvents, title, monthTalks))}</section></div>`
       : `<section class="month-lists">${monthLists(monthItems, monthEvents, title, monthTalks)}</section>`}`;
+}
+
+/* ============================================================
+   Semanas: entregas, exámenes y exposiciones de cada semana, día a día
+   ============================================================ */
+function mondayOf(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function weekRangeLabel(a, b) {
+  const m = (d) => d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${b.getDate()} ${m(b)}` : `${a.getDate()} ${m(a)}–${b.getDate()} ${m(b)}`;
+}
+function planChip(it, kind) {
+  const s = subjectById(it.subject_id);
+  const d = new Date(kind === 'talk' ? it.presentation_at : it.due_at);
+  const meta = kind === 'exam' ? `Examen · ${timeOf(d)}${it.room ? ` · ${it.room}` : ''}` : kind === 'talk' ? `Exposición · ${timeOf(d)}` : 'Entrega';
+  return `<button type="button" class="plan-chip ${kind} ${it.done ? 'done' : ''}" data-view-item="${it.id}" style="--c:${s ? s.color : 'var(--muted)'}" title="${esc(`${meta}: ${it.title}${s ? ` (${s.name})` : ''}`)}">
+    ${s ? `<b>${esc(s.short_name || s.name)}:</b>` : ''}
+    <span class="tt">${esc(it.title)}</span>
+    <span class="meta">${kind === 'exam' ? icon('exam') : kind === 'talk' ? icon('mic') : ''}${esc(meta)}${it.done ? ' · hecho' : ''}</span>
+  </button>`;
+}
+function planView() {
+  const tt = activeTT();
+  const items = ttItems(tt.id);
+  const byDay = new Map();
+  const put = (k, html, sortKey) => { if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push([sortKey, html]); };
+  for (const it of items) {
+    const d = new Date(it.due_at);
+    put(dateKey(d), planChip(it, it.type === 'exam' ? 'exam' : 'task'), `${timeOf(d)}${it.type}`);
+    if (it.presentation_at) { const t = new Date(it.presentation_at); put(dateKey(t), planChip(it, 'talk'), `${timeOf(t)}talk`); }
+  }
+  const keys = [...byDay.keys()].sort();
+  const thisMonday = mondayOf(new Date());
+  const firstWithItems = keys.length ? mondayOf(new Date(`${keys[0]}T12:00`)) : thisMonday;
+  const lastWithItems = keys.length ? mondayOf(new Date(`${keys[keys.length - 1]}T12:00`)) : thisMonday;
+  const start = state.planPast ? (firstWithItems < thisMonday ? firstWithItems : thisMonday) : thisMonday;
+  const end = lastWithItems > start ? lastWithItems : start;
+  const ttStart = tt.start_date ? mondayOf(new Date(`${tt.start_date}T12:00`)) : null;
+  const todayKey = dateKey(new Date());
+  const weeks = [];
+  for (let w = new Date(start); w <= end; w.setDate(w.getDate() + 7)) {
+    const days = [...Array(7)].map((_, i) => { const d = new Date(w); d.setDate(d.getDate() + i); return d; });
+    const num = ttStart ? Math.round((w - ttStart) / 6048e5) + 1 : null;
+    const cells = days.map((d) => {
+      const k = dateKey(d);
+      const chips = (byDay.get(k) || []).sort((a, b) => a[0].localeCompare(b[0])).map((x) => x[1]).join('');
+      return `<div class="plan-day ${chips ? '' : 'free'} ${k === todayKey ? 'today' : ''} ${k < todayKey ? 'past' : ''}">
+        <div class="plan-dow">${DAY_SHORT[d.getDay()]} ${d.getDate()}${d.getDate() === 1 ? ` ${d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}` : ''}</div>
+        <div class="plan-chips">${chips}</div>
+      </div>`;
+    }).join('');
+    const has = days.some((d) => byDay.has(dateKey(d)));
+    weeks.push(`<section class="plan-week ${has ? '' : 'quiet'} ${w.getTime() === thisMonday.getTime() ? 'current' : ''}">
+      <div class="plan-label"><b>${num && num > 0 ? `Semana ${num}` : w.getTime() === thisMonday.getTime() ? 'Esta semana' : 'Semana'}</b><span>${esc(weekRangeLabel(days[0], days[6]))}</span></div>
+      <div class="plan-days">${cells}</div>
+      ${has ? '' : '<p class="plan-none">Nada esta semana.</p>'}
+    </section>`);
+  }
+  const hasPast = keys.length && firstWithItems < thisMonday;
+  return `
+    <div class="toolbar tt-toolbar">${ttSwitcher()}</div>
+    <div class="toolbar plan-toolbar">
+      <h2>Semanas</h2>
+      <span class="legend hide-mobile"><span><i class="legend-dot"></i>Entregas</span><span><i class="legend-dot exam"></i>Exámenes</span><span><i class="legend-dot talk"></i>Exposiciones</span></span>
+      <span class="spacer"></span>
+      ${hasPast ? `<button class="btn" data-action="planPast">${state.planPast ? 'Ocultar semanas pasadas' : 'Ver semanas pasadas'}</button>` : ''}
+    </div>
+    <div class="scroll plan-scroll">
+      ${keys.length ? weeks.join('') : `<div class="empty card"><strong>Aún no hay entregas, exámenes ni exposiciones</strong><p>Cuando añadas tareas y exámenes, aparecerán aquí organizados por semanas.</p><button class="btn btn-primary" data-action="newItem" data-type="task">${icon('plus')}Tarea</button></div>`}
+    </div>`;
 }
 
 /** Tarea o examen solo para informar (sin casilla ni lista de pasos), con el aspecto de las clases. */
