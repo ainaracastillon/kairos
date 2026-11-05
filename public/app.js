@@ -939,14 +939,12 @@ function planView() {
   const y = cur.getFullYear();
   const m = cur.getMonth();
   const lastDay = new Date(y, m + 1, 0);
-  const ttStart = tt.start_date ? mondayOf(new Date(`${tt.start_date}T12:00`)) : null;
   const todayKey = dateKey(new Date());
   const thisMonday = mondayOf(new Date()).getTime();
   const weeks = [];
   let count = 0;
   for (let w = mondayOf(new Date(y, m, 1)); w <= lastDay; w.setDate(w.getDate() + 7)) {
     const days = [...Array(7)].map((_, i) => { const d = new Date(w); d.setDate(d.getDate() + i); return d; });
-    const num = ttStart ? Math.round((w - ttStart) / 6048e5) + 1 : null;
     let has = false;
     const cells = days.map((d) => {
       const k = dateKey(d);
@@ -959,7 +957,7 @@ function planView() {
       </div>`;
     }).join('');
     weeks.push(`<section class="plan-week ${has ? '' : 'quiet'} ${w.getTime() === thisMonday ? 'current' : ''}">
-      <div class="plan-label"><b>${num && num > 0 ? `Semana ${num}` : 'Semana'}</b><span>${esc(weekRangeLabel(days[0], days[6]))}</span></div>
+      <div class="plan-label"><span>${esc(weekRangeLabel(days[0], days[6]))}</span></div>
       <div class="plan-days">${cells}</div>
       ${has ? '' : '<p class="plan-none">Nada esta semana.</p>'}
     </section>`);

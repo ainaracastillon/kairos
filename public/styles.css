@@ -1007,12 +1007,11 @@ input[type=color] { width: 40px; height: 34px; border: 1px solid var(--border-st
 .plan-toolbar h2 { margin: 0; font: 600 20px/1.2 "Fraunces", Georgia, serif; }
 .legend-dot.talk { background: #7a5bbf; }
 .plan-scroll { display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px; }
-.plan-week { display: grid; grid-template-columns: 132px minmax(0, 1fr); border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); flex: none; }
-.plan-week.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.plan-week { display: grid; grid-template-columns: 96px minmax(0, 1fr); border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); flex: none; }
+.plan-week.current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .plan-label { background: #14213d; color: #fff; padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
 .plan-label b { font-size: 15px; letter-spacing: .04em; text-transform: uppercase; }
-.plan-label span { font-size: 14px; opacity: .85; }
-.plan-week.current .plan-label { background: var(--accent); color: var(--on-accent); }
+.plan-label span { font-size: 14px; font-weight: 600; }
 .plan-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .plan-day { border-left: 1px solid var(--border); min-height: 96px; display: flex; flex-direction: column; min-width: 0; }
 .plan-dow { text-align: center; font-size: 12.5px; font-weight: 600; padding: 5px 4px; border-bottom: 1px solid var(--border); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
