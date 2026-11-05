@@ -957,7 +957,6 @@ function planView() {
       </div>`;
     }).join('');
     weeks.push(`<section class="plan-week ${has ? '' : 'quiet'} ${w.getTime() === thisMonday ? 'current' : ''}">
-      <div class="plan-label"><span>${esc(weekRangeLabel(days[0], days[6]))}</span></div>
       <div class="plan-days">${cells}</div>
       ${has ? '' : '<p class="plan-none">Nada esta semana.</p>'}
     </section>`);
